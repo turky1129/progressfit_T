@@ -56,6 +56,7 @@
       background:linear-gradient(135deg,rgba(106,227,255,.28),rgba(167,139,250,.22));
       box-shadow:var(--shadow);
       flex:0 0 auto;
+      cursor:pointer; /* ロゴで更新 */
     }
     .titlewrap{min-width:0}
     .title{font-size:18px; font-weight:900; margin:0; line-height:1.2}
@@ -302,14 +303,13 @@
 <div class="phone">
   <div class="top">
     <div class="brand">
-      <div class="logo"></div>
+      <div class="logo" id="logoBtn" title="更新"></div>
       <div class="titlewrap">
         <div class="title">ProgressFit</div>
         <div class="sub" id="subtitle">Loading…</div>
       </div>
     </div>
     <div class="actions">
-      <div class="chip chipBtn" id="refreshBtn">更新</div>
       <div class="chip chipBtn" id="countChip">件数 <b id="count">0</b></div>
       <div class="chip chipBtn" id="openTargets">目標</div>
       <div class="chip chipBtn" id="openAdd">＋データ</div>
@@ -482,10 +482,6 @@
   </div>
 </div>
 
-<!-- GAS POST sink -->
-<iframe id="gasSink" name="gasSink" style="display:none;"></iframe>
-<form id="gasForm" target="gasSink" method="POST" style="display:none;"></form>
-
 <script>
 /* =========================
    GAS settings
@@ -517,6 +513,22 @@ const TARGET_KEY  = 'progressfit_targets_sheet_v1';
    utils
    ========================= */
 const $ = (id)=>document.getElementById(id);
+
+function normalizeYMD(v){
+  const s = String(v ?? '').trim();
+  if(!s) return '';
+  if(s.includes('T')) return s.slice(0,10);
+  if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const d = new Date(s);
+  if(!isNaN(d.getTime())){
+    const y = d.getFullYear();
+    const m = String(d.getMonth()+1).padStart(2,'0');
+    const dd = String(d.getDate()).padStart(2,'0');
+    return `${y}-${m}-${dd}`;
+  }
+  return s;
+}
+
 function fmt1(x){ return Number.isFinite(x) ? (Math.round(x*10)/10).toFixed(1) : '—'; }
 function numOrNull(v){
   if(v===undefined || v===null) return null;
@@ -573,7 +585,9 @@ function getMetricValue(row, key){
 }
 
 /* =========================
-   GAS I/O (JSONP GET + form POST)
+   GAS I/O
+   - GET: JSONP
+   - POST: fetch(no-cors)
    ========================= */
 function jsonpGet(url){
   return new Promise((resolve, reject)=>{
@@ -596,47 +610,16 @@ function jsonpGet(url){
   });
 }
 
-function postToGAS(params){
-  return new Promise((resolve, reject)=>{
-    const form = document.getElementById('gasForm');
-    const sink = document.getElementById('gasSink');
-
-    form.action = SHEET_ENDPOINT;
-    form.innerHTML = '';
-
-    const withToken = { token: SHEET_TOKEN, ...params };
-    for(const [k,v] of Object.entries(withToken)){
-      const input = document.createElement('input');
-      input.name = k;
-      input.value = (v ?? '').toString();
-      form.appendChild(input);
-    }
-
-    let done = false;
-    const timer = setTimeout(()=>{
-      if(done) return;
-      done = true;
-      sink.onload = null;
-      reject(new Error('post timeout'));
-    }, 15000);
-
-    sink.onload = ()=>{
-      if(done) return;
-      done = true;
-      clearTimeout(timer);
-      sink.onload = null;
-      resolve();
-    };
-
-    form.submit();
-  });
+async function postToGAS(params){
+  const body = new URLSearchParams({ token: SHEET_TOKEN, ...params });
+  await fetch(SHEET_ENDPOINT, { method:'POST', mode:'no-cors', body });
 }
 
 function toRowsFromSheet(header, rowsArr){
   const idx = Object.fromEntries(header.map((h,i)=>[String(h), i]));
   const pick = (r, key)=> (idx[key]===undefined ? null : r[idx[key]]);
   return rowsArr.map(r=>({
-    date: String(pick(r,'date') ?? ''),
+    date: normalizeYMD(pick(r,'date')),
     weight_kg: numOrNull(pick(r,'weight_kg')),
     bodyfat_pct: numOrNull(pick(r,'bodyfat_pct')),
     fatmass_kg: numOrNull(pick(r,'fatmass_kg')),
@@ -644,6 +627,7 @@ function toRowsFromSheet(header, rowsArr){
     muscle_kg: numOrNull(pick(r,'muscle_kg')),
     bmi: numOrNull(pick(r,'bmi')),
     visceral_fat_level: numOrNull(pick(r,'visceral_fat_level')),
+    fitness_score: numOrNull(pick(r,'fitness_score')) // 使わないけど列互換のため保持
   })).filter(x=>x.date).sort((a,b)=>a.date.localeCompare(b.date));
 }
 
@@ -984,7 +968,8 @@ $('metricTabs').addEventListener('click', (e)=>{
   setView('trend','direct');
 });
 
-$('refreshBtn').onclick = reloadRows;
+/* ロゴ押下で更新 */
+$('logoBtn').addEventListener('click', reloadRows);
 
 /* =========================
    modals
@@ -1075,7 +1060,7 @@ $('openAdd').onclick = openAdd;
 $('closeAdd').onclick = ()=> closeModal(addBg);
 
 $('saveAdd').onclick = async ()=>{
-  const date = ($('a_date').value || '').trim();
+  const date = normalizeYMD($('a_date').value || '');
   const weight = parseFloat($('a_weight').value);
   const bf = parseFloat($('a_bf').value);
   const fm = parseFloat($('a_fm').value);
@@ -1083,7 +1068,6 @@ $('saveAdd').onclick = async ()=>{
 
   const mu  = parseFloat($('a_mu').value);
   const vfl = parseFloat($('a_vfl').value);
-
   let bmi = parseFloat($('a_bmi').value);
 
   if(!date){ alert('測定日を選んでね'); return; }
@@ -1102,9 +1086,8 @@ $('saveAdd').onclick = async ()=>{
   }
 
   try{
-    // date変更 = 「旧日付削除 → 新日付upsert」
     if(editMode && editOriginalDate && editOriginalDate !== date){
-      await postToGAS({ action:'delete', date: editOriginalDate });
+      await postToGAS({ action:'delete', date: normalizeYMD(editOriginalDate) });
     }
 
     await postToGAS({
@@ -1113,6 +1096,7 @@ $('saveAdd').onclick = async ()=>{
       weight_kg: weight,
       bodyfat_pct: bf,
       bmi: bmi,
+      fitness_score: '', /* 列互換のため空で送る */
       fatmass_kg: fm,
       muscle_kg: Number.isNaN(mu) ? '' : mu,
       skeletal_muscle_kg: smm,
@@ -1134,7 +1118,7 @@ $('deleteOne').onclick = async ()=>{
   if(!confirm(`${editOriginalDate} のデータを削除する？`)) return;
 
   try{
-    await postToGAS({ action:'delete', date: editOriginalDate });
+    await postToGAS({ action:'delete', date: normalizeYMD(editOriginalDate) });
     editMode = false;
     editOriginalDate = null;
     closeModal(addBg);
@@ -1180,28 +1164,56 @@ $('countChip').onclick = ()=>{
 };
 
 /* =========================
-   CSV import/export (Sheet direct)
+   CSV export/import (client)
    ========================= */
 function exportCsv(){
-  window.open(`${SHEET_ENDPOINT}?action=export&token=${encodeURIComponent(SHEET_TOKEN)}`, '_blank');
+  if(!rows.length){ alert('データがありません'); return; }
+
+  const header = ['date','weight_kg','bodyfat_pct','bmi','fitness_score','fatmass_kg','muscle_kg','skeletal_muscle_kg','visceral_fat_level'];
+  let csv = header.join(',') + '\n';
+
+  for(const r of rows){
+    const line = [
+      normalizeYMD(r.date),
+      r.weight_kg ?? '',
+      r.bodyfat_pct ?? '',
+      r.bmi ?? '',
+      r.fitness_score ?? '',
+      r.fatmass_kg ?? '',
+      r.muscle_kg ?? '',
+      r.skeletal_muscle_kg ?? '',
+      r.visceral_fat_level ?? ''
+    ].map(x => (x ?? '')).join(',');
+    csv += line + '\n';
+  }
+
+  const blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'progressfit_data.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
-function handleImportFiles(files){
+async function handleImportFiles(files){
   const file = files && files[0];
   if(!file) return;
 
   const reader = new FileReader();
-  reader.onload = async function(evt){
+  reader.onload = async (evt)=>{
     try{
       const text = String(evt.target.result || '').trim();
       if(!text){ alert('ファイルが空です'); return; }
 
       await postToGAS({ action:'import', mode:'replace', csv:text });
       await reloadRows();
-      alert('CSV取込（Sheet全置換）完了');
+      alert('インポート完了（Sheet全置換）');
     }catch(err){
       console.error(err);
-      alert('CSV取込に失敗しました（ヘッダ/形式を確認）');
+      alert('インポート失敗（ヘッダ/形式を確認）');
     }
   };
   reader.readAsText(file);
@@ -1232,7 +1244,6 @@ async function exportPdf() {
       return;
     }
 
-    // 直近1年
     const all = rows.slice();
     const endDate = parseDateLocal(all.at(-1).date);
     const startDate = new Date(endDate);
