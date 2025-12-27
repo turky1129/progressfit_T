@@ -56,8 +56,18 @@
       background:linear-gradient(135deg,rgba(106,227,255,.28),rgba(167,139,250,.22));
       box-shadow:var(--shadow);
       flex:0 0 auto;
-      cursor:pointer; /* ロゴで更新 */
+      cursor:pointer;
+      -webkit-tap-highlight-color: transparent;
     }
+    .logo.spinning{
+      animation: spin 0.9s linear infinite;
+      filter: brightness(1.08);
+    }
+    @keyframes spin{
+      from{ transform: rotate(0deg); }
+      to{ transform: rotate(360deg); }
+    }
+
     .titlewrap{min-width:0}
     .title{font-size:18px; font-weight:900; margin:0; line-height:1.2}
     .sub{font-size:12px; color:var(--muted); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
@@ -80,6 +90,12 @@
       color: var(--text);
       background: rgba(106,227,255,.12);
       border-color: rgba(106,227,255,.22);
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .chipBtn.disabled{
+      opacity: .55;
+      pointer-events:none;
     }
 
     .seg{
@@ -99,6 +115,8 @@
       cursor:pointer;
       line-height:1;
       flex:1;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
     }
     .seg button.active{
       color:var(--text);
@@ -152,6 +170,8 @@
       cursor:pointer;
       line-height:1;
       user-select:none;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
     }
     .tab.active{
       color: var(--text);
@@ -168,16 +188,10 @@
     }
 
     .chartWrap{ position:relative; flex:1; min-height:0; }
-    #trendView{
-      padding-bottom: calc(30px + env(safe-area-inset-bottom));
-    }
+    #trendView{ padding-bottom: calc(30px + env(safe-area-inset-bottom)); }
     canvas{width:100% !important; height:100% !important}
 
-    #moreView{
-      flex:1;
-      min-height:0;
-      overflow:auto;
-    }
+    #moreView{ flex:1; min-height:0; overflow:auto; }
 
     .viewSeg{ margin-top:auto; }
 
@@ -201,6 +215,8 @@
       padding:10px;
       cursor:pointer;
       user-select:none;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
     }
     .moreName{font-size:12px;color:var(--muted);font-weight:900}
     .moreVal{margin-top:6px;font-size:18px;font-weight:1000}
@@ -259,6 +275,8 @@
       cursor:pointer;
       line-height:1;
       user-select:none;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
     }
     .btnPrimary{
       background: rgba(106,227,255,.14);
@@ -293,6 +311,8 @@
       font-weight:900;
       cursor:pointer;
       user-select:none;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
     }
 
     .safeBottom{height: env(safe-area-inset-bottom);}
@@ -514,6 +534,8 @@ const TARGET_KEY  = 'progressfit_targets_sheet_v1';
    ========================= */
 const $ = (id)=>document.getElementById(id);
 
+function sleep(ms){ return new Promise(r=>setTimeout(r, ms)); }
+
 function normalizeYMD(v){
   const s = String(v ?? '').trim();
   if(!s) return '';
@@ -548,6 +570,38 @@ function setDelta(el, v, goodWhenDecrease){
   el.textContent = (r>0?'+':'') + r.toFixed(1);
   const good = goodWhenDecrease ? (r<0) : (r>0);
   el.style.color = good ? 'var(--good)' : 'var(--bad)';
+}
+
+/* busy UI */
+let busyCount = 0;
+function setBusy(on, label){
+  busyCount += on ? 1 : -1;
+  if(busyCount < 0) busyCount = 0;
+
+  const isBusy = busyCount > 0;
+  const logo = $('logoBtn');
+  logo.classList.toggle('spinning', isBusy);
+
+  ['countChip','openTargets','openAdd','exportCsvBtn','importCsvBtn','exportPdfBtn'].forEach(id=>{
+    const el = $(id);
+    if(!el) return;
+    el.classList.toggle('disabled', isBusy);
+  });
+
+  if(label){
+    $('subtitle').textContent = label;
+  }
+}
+async function withBusy(label, fn, minMs=250){
+  const start = Date.now();
+  setBusy(true, label);
+  try{
+    return await fn();
+  }finally{
+    const elapsed = Date.now() - start;
+    if(elapsed < minMs) await sleep(minMs - elapsed);
+    setBusy(false);
+  }
 }
 
 /* =========================
@@ -586,8 +640,6 @@ function getMetricValue(row, key){
 
 /* =========================
    GAS I/O
-   - GET: JSONP
-   - POST: fetch(no-cors)
    ========================= */
 function jsonpGet(url){
   return new Promise((resolve, reject)=>{
@@ -627,7 +679,7 @@ function toRowsFromSheet(header, rowsArr){
     muscle_kg: numOrNull(pick(r,'muscle_kg')),
     bmi: numOrNull(pick(r,'bmi')),
     visceral_fat_level: numOrNull(pick(r,'visceral_fat_level')),
-    fitness_score: numOrNull(pick(r,'fitness_score')) // 使わないけど列互換のため保持
+    fitness_score: numOrNull(pick(r,'fitness_score'))
   })).filter(x=>x.date).sort((a,b)=>a.date.localeCompare(b.date));
 }
 
@@ -927,19 +979,33 @@ function render(){
 /* =========================
    load / refresh
    ========================= */
-async function reloadRows(){
-  try{
-    $('subtitle').textContent = 'Loading…';
-    const url = `${SHEET_ENDPOINT}?action=read&token=${encodeURIComponent(SHEET_TOKEN)}`;
-    const payload = await jsonpGet(url);
-    if(!payload?.ok) throw new Error(payload?.error || 'bad payload');
-    rows = toRowsFromSheet(payload.header, payload.rows);
-    render();
-  }catch(e){
-    console.error(e);
-    $('subtitle').textContent = 'Load failed';
-    alert('Sheet読み込みに失敗しました（TOKEN / デプロイ設定 / GAS側レスポンスを確認）');
+async function reloadRowsCore(){
+  const url = `${SHEET_ENDPOINT}?action=read&token=${encodeURIComponent(SHEET_TOKEN)}`;
+  const payload = await jsonpGet(url);
+  if(!payload?.ok) throw new Error(payload?.error || 'bad payload');
+  rows = toRowsFromSheet(payload.header, payload.rows);
+  render();
+}
+
+/* 書き込み直後の読み取りは反映ズレがあるので軽くリトライ */
+async function reloadRowsRetry(){
+  let lastErr = null;
+  for(let i=0;i<3;i++){
+    try{
+      await reloadRowsCore();
+      return;
+    }catch(e){
+      lastErr = e;
+      await sleep(300 + i*250);
+    }
   }
+  throw lastErr;
+}
+
+async function reloadRows(){
+  await withBusy('Loading…', async ()=>{
+    await reloadRowsRetry();
+  }, 350);
 }
 
 /* =========================
@@ -968,8 +1034,10 @@ $('metricTabs').addEventListener('click', (e)=>{
   setView('trend','direct');
 });
 
-/* ロゴ押下で更新 */
-$('logoBtn').addEventListener('click', reloadRows);
+/* ロゴ押下で更新（Loadingに戻す演出） */
+$('logoBtn').addEventListener('click', async ()=>{
+  await reloadRows();
+});
 
 /* =========================
    modals
@@ -1086,30 +1154,36 @@ $('saveAdd').onclick = async ()=>{
   }
 
   try{
-    if(editMode && editOriginalDate && editOriginalDate !== date){
-      await postToGAS({ action:'delete', date: normalizeYMD(editOriginalDate) });
-    }
+    await withBusy('Saving…', async ()=>{
+      if(editMode && editOriginalDate && editOriginalDate !== date){
+        await postToGAS({ action:'delete', date: normalizeYMD(editOriginalDate) });
+        await sleep(200);
+      }
 
-    await postToGAS({
-      action:'upsert',
-      date,
-      weight_kg: weight,
-      bodyfat_pct: bf,
-      bmi: bmi,
-      fitness_score: '', /* 列互換のため空で送る */
-      fatmass_kg: fm,
-      muscle_kg: Number.isNaN(mu) ? '' : mu,
-      skeletal_muscle_kg: smm,
-      visceral_fat_level: Number.isNaN(vfl) ? '' : vfl
-    });
+      await postToGAS({
+        action:'upsert',
+        date,
+        weight_kg: weight,
+        bodyfat_pct: bf,
+        bmi: bmi,
+        fitness_score: '',
+        fatmass_kg: fm,
+        muscle_kg: Number.isNaN(mu) ? '' : mu,
+        skeletal_muscle_kg: smm,
+        visceral_fat_level: Number.isNaN(vfl) ? '' : vfl
+      });
+
+      // 反映ズレ吸収
+      await sleep(450);
+      await reloadRowsRetry();
+    }, 450);
 
     editMode = false;
     editOriginalDate = null;
     closeModal(addBg);
-    await reloadRows();
   }catch(e){
     console.error(e);
-    alert('保存に失敗しました（GASのTOKEN/権限/デプロイを確認）');
+    alert('保存に失敗しました（GASのTOKEN/デプロイ/権限を確認）');
   }
 };
 
@@ -1118,11 +1192,15 @@ $('deleteOne').onclick = async ()=>{
   if(!confirm(`${editOriginalDate} のデータを削除する？`)) return;
 
   try{
-    await postToGAS({ action:'delete', date: normalizeYMD(editOriginalDate) });
+    await withBusy('Deleting…', async ()=>{
+      await postToGAS({ action:'delete', date: normalizeYMD(editOriginalDate) });
+      await sleep(450);
+      await reloadRowsRetry();
+    }, 450);
+
     editMode = false;
     editOriginalDate = null;
     closeModal(addBg);
-    await reloadRows();
   }catch(e){
     console.error(e);
     alert('削除に失敗しました');
@@ -1208,8 +1286,12 @@ async function handleImportFiles(files){
       const text = String(evt.target.result || '').trim();
       if(!text){ alert('ファイルが空です'); return; }
 
-      await postToGAS({ action:'import', mode:'replace', csv:text });
-      await reloadRows();
+      await withBusy('Importing…', async ()=>{
+        await postToGAS({ action:'import', mode:'replace', csv:text });
+        await sleep(600);
+        await reloadRowsRetry();
+      }, 450);
+
       alert('インポート完了（Sheet全置換）');
     }catch(err){
       console.error(err);
@@ -1244,113 +1326,116 @@ async function exportPdf() {
       return;
     }
 
-    const all = rows.slice();
-    const endDate = parseDateLocal(all.at(-1).date);
-    const startDate = new Date(endDate);
-    startDate.setFullYear(startDate.getFullYear() - 1);
-    const rows1y = all.filter(r => {
-      const d = parseDateLocal(r.date);
-      return d && d >= startDate;
-    });
-    if(!rows1y.length){
-      alert('出力するデータがありません');
-      return;
-    }
-
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-
-    async function createTextImage(text, fontSize, width, height) {
-      const c = document.createElement('canvas');
-      c.width = width;
-      c.height = height;
-      const ctx = c.getContext('2d');
-      ctx.fillStyle = '#0D2340';
-      ctx.fillRect(0, 0, c.width, c.height);
-      ctx.fillStyle = '#ffffff';
-      ctx.font = `${fontSize}px sans-serif`;
-      ctx.textBaseline = 'middle';
-      ctx.fillText(text, 8, height / 2);
-      return c.toDataURL('image/png');
-    }
-
-    async function createChartImage(metricKey) {
-      return new Promise((resolve) => {
-        const canvas = document.createElement('canvas');
-        canvas.width = 600;
-        canvas.height = 300;
-        const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#0D2340';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        const labels = rows1y.map(r => r.date);
-        const values = rows1y.map(r => getMetricValue(r, metricKey));
-
-        const chart = new Chart(ctx, {
-          type: 'line',
-          data: {
-            labels,
-            datasets: [{
-              data: values,
-              fill: false,
-              tension: 0.2,
-              borderWidth: 2,
-              pointRadius: 0,
-              spanGaps: true
-            }]
-          },
-          options: {
-            responsive: false,
-            maintainAspectRatio: false,
-            plugins: { legend: { display:false }, tooltip:{ enabled:false } },
-            scales: {
-              x: { ticks: { autoSkip:true, maxTicksLimit:6, color:'#ffffff' }, grid:{ color:'rgba(255,255,255,0.1)' } },
-              y: { ticks: { color:'#ffffff' }, grid:{ color:'rgba(255,255,255,0.1)' } }
-            }
-          }
-        });
-
-        setTimeout(() => {
-          const img = chart.toBase64Image();
-          chart.destroy();
-          resolve(img);
-        }, 100);
+    await withBusy('Generating PDF…', async ()=>{
+      const all = rows.slice();
+      const endDate = parseDateLocal(all.at(-1).date);
+      const startDate = new Date(endDate);
+      startDate.setFullYear(startDate.getFullYear() - 1);
+      const rows1y = all.filter(r => {
+        const d = parseDateLocal(r.date);
+        return d && d >= startDate;
       });
-    }
-
-    const from = rows1y[0].date;
-    const to = rows1y.at(-1).date;
-
-    const titleImg = await createTextImage('ProgressFit レポート', 20, 600, 40);
-    const periodImg = await createTextImage(`期間: ${from} ～ ${to} (直近1年)`, 12, 600, 30);
-
-    const metricsToExport = [...MAIN_METRICS, ...getMoreMetrics()];
-    let first = true;
-
-    for(const m of metricsToExport){
-      const mDef = METRICS[m];
-      const imgData = await createChartImage(m);
-
-      if(first){
-        doc.setFillColor(13, 35, 64);
-        doc.rect(0, 0, 210, 297, 'F');
-        doc.addImage(titleImg, 'PNG', 10, 10, 190, 15);
-        doc.addImage(periodImg, 'PNG', 10, 27, 190, 10);
-
-        const metricTitleImg = await createTextImage(mDef.name, 14, 600, 25);
-        doc.addImage(metricTitleImg, 'PNG', 10, 40, 190, 10);
-        doc.addImage(imgData, 'PNG', 10, 50, 190, 100);
-        first = false;
-      }else{
-        doc.addPage();
-        doc.setFillColor(13, 35, 64);
-        doc.rect(0, 0, 210, 297, 'F');
-        const metricTitleImg = await createTextImage(mDef.name, 14, 600, 25);
-        doc.addImage(metricTitleImg, 'PNG', 10, 10, 190, 10);
-        doc.addImage(imgData, 'PNG', 10, 20, 190, 100);
+      if(!rows1y.length){
+        alert('出力するデータがありません');
+        return;
       }
-    }
 
-    doc.save('progressfit_report.pdf');
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+      async function createTextImage(text, fontSize, width, height) {
+        const c = document.createElement('canvas');
+        c.width = width;
+        c.height = height;
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = '#0D2340';
+        ctx.fillRect(0, 0, c.width, c.height);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = `${fontSize}px sans-serif`;
+        ctx.textBaseline = 'middle';
+        ctx.fillText(text, 8, height / 2);
+        return c.toDataURL('image/png');
+      }
+
+      async function createChartImage(metricKey) {
+        return new Promise((resolve) => {
+          const canvas = document.createElement('canvas');
+          canvas.width = 600;
+          canvas.height = 300;
+          const ctx = canvas.getContext('2d');
+          ctx.fillStyle = '#0D2340';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+          const labels = rows1y.map(r => r.date);
+          const values = rows1y.map(r => getMetricValue(r, metricKey));
+
+          const chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+              labels,
+              datasets: [{
+                data: values,
+                fill: false,
+                tension: 0.2,
+                borderWidth: 2,
+                pointRadius: 0,
+                spanGaps: true
+              }]
+            },
+            options: {
+              responsive: false,
+              maintainAspectRatio: false,
+              plugins: { legend: { display:false }, tooltip:{ enabled:false } },
+              scales: {
+                x: { ticks: { autoSkip:true, maxTicksLimit:6, color:'#ffffff' }, grid:{ color:'rgba(255,255,255,0.1)' } },
+                y: { ticks: { color:'#ffffff' }, grid:{ color:'rgba(255,255,255,0.1)' } }
+              }
+            }
+          });
+
+          setTimeout(() => {
+            const img = chart.toBase64Image();
+            chart.destroy();
+            resolve(img);
+          }, 100);
+        });
+      }
+
+      const from = rows1y[0].date;
+      const to = rows1y.at(-1).date;
+
+      const titleImg = await createTextImage('ProgressFit レポート', 20, 600, 40);
+      const periodImg = await createTextImage(`期間: ${from} ～ ${to} (直近1年)`, 12, 600, 30);
+
+      const metricsToExport = [...MAIN_METRICS, ...getMoreMetrics()];
+      let first = true;
+
+      for(const m of metricsToExport){
+        const mDef = METRICS[m];
+        const imgData = await createChartImage(m);
+
+        if(first){
+          doc.setFillColor(13, 35, 64);
+          doc.rect(0, 0, 210, 297, 'F');
+          doc.addImage(titleImg, 'PNG', 10, 10, 190, 15);
+          doc.addImage(periodImg, 'PNG', 10, 27, 190, 10);
+
+          const metricTitleImg = await createTextImage(mDef.name, 14, 600, 25);
+          doc.addImage(metricTitleImg, 'PNG', 10, 40, 190, 10);
+          doc.addImage(imgData, 'PNG', 10, 50, 190, 100);
+          first = false;
+        }else{
+          doc.addPage();
+          doc.setFillColor(13, 35, 64);
+          doc.rect(0, 0, 210, 297, 'F');
+          const metricTitleImg = await createTextImage(mDef.name, 14, 600, 25);
+          doc.addImage(metricTitleImg, 'PNG', 10, 10, 190, 10);
+          doc.addImage(imgData, 'PNG', 10, 20, 190, 100);
+        }
+      }
+
+      doc.save('progressfit_report.pdf');
+    }, 450);
+
   }catch(err){
     console.error(err);
     alert('PDF生成に失敗しました');
