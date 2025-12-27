@@ -6,6 +6,7 @@
   <meta name="theme-color" content="#0b1220" />
   <title>ProgressFit</title>
 
+  <!-- PWA / icons -->
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="apple-touch-icon.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
@@ -389,8 +390,8 @@
       </div>
 
       <div class="hint">
-        ※データの正はGoogle Sheet。追加/更新/削除はSheetに反映。<br/>
-        ※CSV取込はSheet全置換（replace）。
+        ※データの正はGoogle Sheet。追加/更新/削除は即時Sheetに反映されます。<br/>
+        ※CSV取込はSheet全置換（replace）です。
       </div>
     </div>
 
@@ -506,10 +507,10 @@
    GAS settings
    ========================= */
 const SHEET_ENDPOINT = 'https://script.google.com/macros/s/AKfycbw9CtTfhzsc7ZMDPvHQXcVDl5dSBwnkBS7eqkiL135vLPowX1lus2IRgsQlX2QY73bXtA/exec';
-const SHEET_TOKEN = 'CHANGE_ME_TOKEN'; // ←GASのTOKENと一致させる
+const SHEET_TOKEN = 'CHANGE_ME_TOKEN'; // ←GAS側のTOKENと一致させる
 
 /* =========================
-   metrics
+   configs
    ========================= */
 const METRICS = {
   weight_kg:           { name:'体重', unit:'kg' },
@@ -517,15 +518,22 @@ const METRICS = {
   fatmass_kg:          { name:'体脂肪量', unit:'kg' },
   skeletal_muscle_kg:  { name:'骨格筋量', unit:'kg' },
 
-  bmi:                 { name:'BMI', unit:''       },
   muscle_kg:           { name:'筋肉量', unit:'kg'  },
+  bmi:                 { name:'BMI', unit:''       },
   visceral_fat_level:  { name:'内臓脂肪', unit:'lv' },
 };
 const MAIN_METRICS = ['weight_kg','bodyfat_pct','fatmass_kg','skeletal_muscle_kg'];
 
-const TARGET_KEY = 'progressfit_targets_sheet_v2';
+/* =========================
+   storage keys
+   ========================= */
+const TARGET_KEY  = 'progressfit_targets_sheet_v1';
 
+/* =========================
+   utils
+   ========================= */
 const $ = (id)=>document.getElementById(id);
+
 function sleep(ms){ return new Promise(r=>setTimeout(r, ms)); }
 
 function normalizeYMD(v){
@@ -543,6 +551,7 @@ function normalizeYMD(v){
   return s;
 }
 
+function fmt1(x){ return Number.isFinite(x) ? (Math.round(x*10)/10).toFixed(1) : '—'; }
 function numOrNull(v){
   if(v===undefined || v===null) return null;
   const s = String(v).trim();
@@ -550,7 +559,6 @@ function numOrNull(v){
   const n = Number(s);
   return Number.isFinite(n) ? n : null;
 }
-function fmt1(x){ return Number.isFinite(x) ? (Math.round(x*10)/10).toFixed(1) : '—'; }
 function parseDateLocal(ymd){
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd||''));
   if(!m) return null;
@@ -564,16 +572,15 @@ function setDelta(el, v, goodWhenDecrease){
   el.style.color = good ? 'var(--good)' : 'var(--bad)';
 }
 
-/* =========================
-   Busy UI (logo spin + disable)
-   ========================= */
+/* busy UI */
 let busyCount = 0;
 function setBusy(on, label){
   busyCount += on ? 1 : -1;
   if(busyCount < 0) busyCount = 0;
 
   const isBusy = busyCount > 0;
-  $('logoBtn').classList.toggle('spinning', isBusy);
+  const logo = $('logoBtn');
+  logo.classList.toggle('spinning', isBusy);
 
   ['countChip','openTargets','openAdd','exportCsvBtn','importCsvBtn','exportPdfBtn'].forEach(id=>{
     const el = $(id);
@@ -581,7 +588,9 @@ function setBusy(on, label){
     el.classList.toggle('disabled', isBusy);
   });
 
-  if(label) $('subtitle').textContent = label;
+  if(label){
+    $('subtitle').textContent = label;
+  }
 }
 async function withBusy(label, fn, minMs=250){
   const start = Date.now();
@@ -596,7 +605,7 @@ async function withBusy(label, fn, minMs=250){
 }
 
 /* =========================
-   Targets (local only)
+   targets (local only)
    ========================= */
 const defaultTargets = {
   weight_kg: 75.0,
@@ -606,6 +615,7 @@ const defaultTargets = {
   height_cm: null
 };
 let targets = loadTargets();
+
 function loadTargets(){
   try{
     const raw = localStorage.getItem(TARGET_KEY);
@@ -620,17 +630,16 @@ function computeBmiFromHeight(weightKg){
   return weightKg / (h*h);
 }
 function getMetricValue(row, key){
-  const v = row?.[key];
-  if(Number.isFinite(v)) return v;
-  if(key==='bmi'){
-    const calc = computeBmiFromHeight(row?.weight_kg);
+  if(Number.isFinite(row[key])) return row[key];
+  if(key === 'bmi'){
+    const calc = computeBmiFromHeight(row.weight_kg);
     return Number.isFinite(calc) ? calc : null;
   }
   return null;
 }
 
 /* =========================
-   JSONP (GET /read)
+   GAS I/O
    ========================= */
 function jsonpGet(url){
   return new Promise((resolve, reject)=>{
@@ -641,14 +650,21 @@ function jsonpGet(url){
       cleanup();
       resolve(payload);
     };
+
     function cleanup(){
       try{ delete window[cb]; }catch(e){ window[cb]=undefined; }
       if(script.parentNode) script.parentNode.removeChild(script);
     }
+
     script.onerror = ()=>{ cleanup(); reject(new Error('jsonp error')); };
     script.src = `${url}&callback=${encodeURIComponent(cb)}&_=${Date.now()}`;
     document.body.appendChild(script);
   });
+}
+
+async function postToGAS(params){
+  const body = new URLSearchParams({ token: SHEET_TOKEN, ...params });
+  await fetch(SHEET_ENDPOINT, { method:'POST', mode:'no-cors', body });
 }
 
 function toRowsFromSheet(header, rowsArr){
@@ -658,68 +674,17 @@ function toRowsFromSheet(header, rowsArr){
     date: normalizeYMD(pick(r,'date')),
     weight_kg: numOrNull(pick(r,'weight_kg')),
     bodyfat_pct: numOrNull(pick(r,'bodyfat_pct')),
-    bmi: numOrNull(pick(r,'bmi')),
-    fitness_score: numOrNull(pick(r,'fitness_score')),
     fatmass_kg: numOrNull(pick(r,'fatmass_kg')),
-    muscle_kg: numOrNull(pick(r,'muscle_kg')),
     skeletal_muscle_kg: numOrNull(pick(r,'skeletal_muscle_kg')),
+    muscle_kg: numOrNull(pick(r,'muscle_kg')),
+    bmi: numOrNull(pick(r,'bmi')),
     visceral_fat_level: numOrNull(pick(r,'visceral_fat_level')),
+    fitness_score: numOrNull(pick(r,'fitness_score'))
   })).filter(x=>x.date).sort((a,b)=>a.date.localeCompare(b.date));
 }
 
 /* =========================
-   POST (hidden iframe + form)  ← ここが肝
-   ========================= */
-let sinkFrame = null;
-function ensureSink(){
-  if(sinkFrame) return;
-  sinkFrame = document.createElement('iframe');
-  sinkFrame.name = 'pf_sink';
-  sinkFrame.style.display = 'none';
-  document.body.appendChild(sinkFrame);
-}
-function postToGAS(params){
-  ensureSink();
-  return new Promise((resolve)=>{
-    const form = document.createElement('form');
-    form.method = 'POST';
-    form.action = SHEET_ENDPOINT;
-    form.target = 'pf_sink';
-    form.style.display = 'none';
-
-    const put = (k,v)=>{
-      const inp = document.createElement('input');
-      inp.type = 'hidden';
-      inp.name = k;
-      inp.value = String(v ?? '');
-      form.appendChild(inp);
-    };
-
-    put('token', SHEET_TOKEN);
-    Object.entries(params || {}).forEach(([k,v])=>put(k,v));
-
-    document.body.appendChild(form);
-
-    let done = false;
-    const finish = ()=>{
-      if(done) return;
-      done = true;
-      if(form.parentNode) form.parentNode.removeChild(form);
-      resolve();
-    };
-
-    const timer = setTimeout(finish, 900);
-    sinkFrame.addEventListener('load', ()=>{
-      clearTimeout(timer);
-      finish();
-    }, { once:true });
-
-    form.submit();
-  });
-}
-
-/* =========================
-   State
+   state
    ========================= */
 let rows = [];
 let currentRange = 'all';
@@ -734,7 +699,7 @@ let editMode = false;
 let editOriginalDate = null;
 
 /* =========================
-   Range filter
+   range filter
    ========================= */
 function filt(){
   if(!rows.length) return [];
@@ -754,7 +719,7 @@ function filt(){
 }
 
 /* =========================
-   Chart plugins
+   chart plugins
    ========================= */
 const targetLinePlugin = {
   id: 'targetLine',
@@ -823,7 +788,7 @@ const bodyMapBg = {
 };
 
 /* =========================
-   Charts
+   charts
    ========================= */
 function ensureTrend(data){
   const labels = data.map(r=>r.date);
@@ -910,7 +875,7 @@ function ensureBodyMap(data){
 }
 
 /* =========================
-   Views
+   views
    ========================= */
 function setView(v, via='direct'){
   currentView = v;
@@ -1012,7 +977,7 @@ function render(){
 }
 
 /* =========================
-   Reload rows (read via JSONP)
+   load / refresh
    ========================= */
 async function reloadRowsCore(){
   const url = `${SHEET_ENDPOINT}?action=read&token=${encodeURIComponent(SHEET_TOKEN)}`;
@@ -1021,6 +986,8 @@ async function reloadRowsCore(){
   rows = toRowsFromSheet(payload.header, payload.rows);
   render();
 }
+
+/* 書き込み直後の読み取りは反映ズレがあるので軽くリトライ */
 async function reloadRowsRetry(){
   let lastErr = null;
   for(let i=0;i<3;i++){
@@ -1034,15 +1001,11 @@ async function reloadRowsRetry(){
   }
   throw lastErr;
 }
+
 async function reloadRows(){
   await withBusy('Loading…', async ()=>{
     await reloadRowsRetry();
   }, 350);
-}
-
-function findRow(date){
-  const d = normalizeYMD(date);
-  return rows.find(r=>r.date === d) || null;
 }
 
 /* =========================
@@ -1056,9 +1019,11 @@ document.querySelectorAll('#rangeSeg button').forEach(b=>{
     render();
   });
 });
+
 document.querySelectorAll('#viewSeg button').forEach(b=>{
   b.addEventListener('click', ()=> setView(b.dataset.view,'direct'));
 });
+
 $('metricTabs').addEventListener('click', (e)=>{
   const tab = e.target.closest('.tab');
   if(!tab) return;
@@ -1068,10 +1033,14 @@ $('metricTabs').addEventListener('click', (e)=>{
   showMetricTabs = true;
   setView('trend','direct');
 });
-$('logoBtn').addEventListener('click', reloadRows);
+
+/* ロゴ押下で更新（Loadingに戻す演出） */
+$('logoBtn').addEventListener('click', async ()=>{
+  await reloadRows();
+});
 
 /* =========================
-   Modals
+   modals
    ========================= */
 function openModal(bg){ bg.style.display='flex'; }
 function closeModal(bg){ bg.style.display='none'; }
@@ -1085,7 +1054,7 @@ closeOnBg(targetsBg);
 closeOnBg(addBg);
 closeOnBg(listBg);
 
-/* Targets */
+/* ===== Targets ===== */
 $('openTargets').onclick = ()=>{
   $('t_weight').value = Number.isFinite(targets.weight_kg)?targets.weight_kg.toFixed(1):'';
   $('t_bf').value     = Number.isFinite(targets.bodyfat_pct)?targets.bodyfat_pct.toFixed(1):'';
@@ -1095,6 +1064,7 @@ $('openTargets').onclick = ()=>{
   openModal(targetsBg);
 };
 $('closeTargets').onclick = ()=> closeModal(targetsBg);
+
 $('saveTargets').onclick = ()=>{
   const w  = parseFloat($('t_weight').value);
   const bf = parseFloat($('t_bf').value);
@@ -1116,7 +1086,7 @@ $('saveTargets').onclick = ()=>{
   render();
 };
 
-/* Add/Edit */
+/* ===== add/edit ===== */
 function resetForm(){
   $('a_date').value = '';
   $('a_weight').value = '';
@@ -1127,6 +1097,7 @@ function resetForm(){
   $('a_vfl').value = '';
   $('a_bmi').value = '';
 }
+
 function openAdd(){
   editMode = false;
   editOriginalDate = null;
@@ -1152,6 +1123,7 @@ function openEdit(row){
 
   openModal(addBg);
 }
+
 $('openAdd').onclick = openAdd;
 $('closeAdd').onclick = ()=> closeModal(addBg);
 
@@ -1171,6 +1143,7 @@ $('saveAdd').onclick = async ()=>{
     alert('必須が足りないよ（体重/体脂肪率/体脂肪量/骨格筋量）');
     return;
   }
+
   if(Number.isNaN(bmi)){
     const calc = computeBmiFromHeight(weight);
     if(calc===null){
@@ -1180,20 +1153,11 @@ $('saveAdd').onclick = async ()=>{
     bmi = calc;
   }
 
-  const expected = {
-    date,
-    weight_kg: weight,
-    bodyfat_pct: bf,
-    bmi,
-    fatmass_kg: fm,
-    skeletal_muscle_kg: smm
-  };
-
   try{
     await withBusy('Saving…', async ()=>{
       if(editMode && editOriginalDate && editOriginalDate !== date){
         await postToGAS({ action:'delete', date: normalizeYMD(editOriginalDate) });
-        await sleep(250);
+        await sleep(200);
       }
 
       await postToGAS({
@@ -1201,7 +1165,7 @@ $('saveAdd').onclick = async ()=>{
         date,
         weight_kg: weight,
         bodyfat_pct: bf,
-        bmi,
+        bmi: bmi,
         fitness_score: '',
         fatmass_kg: fm,
         muscle_kg: Number.isNaN(mu) ? '' : mu,
@@ -1209,19 +1173,9 @@ $('saveAdd').onclick = async ()=>{
         visceral_fat_level: Number.isNaN(vfl) ? '' : vfl
       });
 
+      // 反映ズレ吸収
       await sleep(450);
       await reloadRowsRetry();
-
-      const got = findRow(date);
-      if(!got) throw new Error('upsert_not_reflected');
-
-      const ok =
-        Math.abs((got.weight_kg ?? 0) - expected.weight_kg) < 0.0001 &&
-        Math.abs((got.bodyfat_pct ?? 0) - expected.bodyfat_pct) < 0.0001 &&
-        Math.abs((got.fatmass_kg ?? 0) - expected.fatmass_kg) < 0.0001 &&
-        Math.abs((got.skeletal_muscle_kg ?? 0) - expected.skeletal_muscle_kg) < 0.0001;
-
-      if(!ok) throw new Error('upsert_mismatch');
     }, 450);
 
     editMode = false;
@@ -1229,7 +1183,7 @@ $('saveAdd').onclick = async ()=>{
     closeModal(addBg);
   }catch(e){
     console.error(e);
-    alert('保存が反映されなかった。TOKEN一致 / Webアプリのデプロイ(最新版) / 権限(全員OK) を確認してね');
+    alert('保存に失敗しました（GASのTOKEN/デプロイ/権限を確認）');
   }
 };
 
@@ -1242,9 +1196,6 @@ $('deleteOne').onclick = async ()=>{
       await postToGAS({ action:'delete', date: normalizeYMD(editOriginalDate) });
       await sleep(450);
       await reloadRowsRetry();
-
-      const got = findRow(editOriginalDate);
-      if(got) throw new Error('delete_not_reflected');
     }, 450);
 
     editMode = false;
@@ -1252,12 +1203,13 @@ $('deleteOne').onclick = async ()=>{
     closeModal(addBg);
   }catch(e){
     console.error(e);
-    alert('削除が反映されなかった。TOKEN一致 / Webアプリのデプロイ(最新版) を確認してね');
+    alert('削除に失敗しました');
   }
 };
 
-/* List */
+/* ===== list ===== */
 $('closeList').onclick = ()=> closeModal(listBg);
+
 function renderList(){
   const data = filt().slice().sort((a,b)=>b.date.localeCompare(a.date));
   const wrap = $('listWrap');
@@ -1265,7 +1217,6 @@ function renderList(){
   for(const r of data){
     const div = document.createElement('div');
     div.className = 'listRow';
-
     const w = getMetricValue(r,'weight_kg');
     const bf = getMetricValue(r,'bodyfat_pct');
     const fm = getMetricValue(r,'fatmass_kg');
@@ -1290,11 +1241,15 @@ $('countChip').onclick = ()=>{
   openModal(listBg);
 };
 
-/* CSV export/import (Sheet replace) */
+/* =========================
+   CSV export/import (client)
+   ========================= */
 function exportCsv(){
   if(!rows.length){ alert('データがありません'); return; }
+
   const header = ['date','weight_kg','bodyfat_pct','bmi','fitness_score','fatmass_kg','muscle_kg','skeletal_muscle_kg','visceral_fat_level'];
   let csv = header.join(',') + '\n';
+
   for(const r of rows){
     const line = [
       normalizeYMD(r.date),
@@ -1309,6 +1264,7 @@ function exportCsv(){
     ].map(x => (x ?? '')).join(',');
     csv += line + '\n';
   }
+
   const blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -1319,6 +1275,7 @@ function exportCsv(){
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+
 async function handleImportFiles(files){
   const file = files && files[0];
   if(!file) return;
@@ -1331,7 +1288,7 @@ async function handleImportFiles(files){
 
       await withBusy('Importing…', async ()=>{
         await postToGAS({ action:'import', mode:'replace', csv:text });
-        await sleep(650);
+        await sleep(600);
         await reloadRowsRetry();
       }, 450);
 
@@ -1343,6 +1300,7 @@ async function handleImportFiles(files){
   };
   reader.readAsText(file);
 }
+
 $('exportCsvBtn').addEventListener('click', exportCsv);
 $('importCsvBtn').addEventListener('click', ()=>{
   const input = $('importCsvInput');
@@ -1353,12 +1311,20 @@ $('importCsvInput').addEventListener('change', (e)=>{
   handleImportFiles(e.target.files);
 });
 
-/* PDF */
+/* =========================
+   PDF export
+   ========================= */
 async function exportPdf() {
   try{
     const { jsPDF } = window.jspdf || {};
-    if(!jsPDF){ alert('PDFライブラリの読み込みに失敗しました'); return; }
-    if(!rows.length){ alert('出力するデータがありません'); return; }
+    if(!jsPDF){
+      alert('PDFライブラリの読み込みに失敗しました');
+      return;
+    }
+    if(!rows.length){
+      alert('出力するデータがありません');
+      return;
+    }
 
     await withBusy('Generating PDF…', async ()=>{
       const all = rows.slice();
@@ -1369,7 +1335,10 @@ async function exportPdf() {
         const d = parseDateLocal(r.date);
         return d && d >= startDate;
       });
-      if(!rows1y.length){ alert('出力するデータがありません'); return; }
+      if(!rows1y.length){
+        alert('出力するデータがありません');
+        return;
+      }
 
       const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
@@ -1401,13 +1370,24 @@ async function exportPdf() {
 
           const chart = new Chart(ctx, {
             type: 'line',
-            data: { labels, datasets: [{ data: values, fill:false, tension:0.2, borderWidth:2, pointRadius:0, spanGaps:true }] },
+            data: {
+              labels,
+              datasets: [{
+                data: values,
+                fill: false,
+                tension: 0.2,
+                borderWidth: 2,
+                pointRadius: 0,
+                spanGaps: true
+              }]
+            },
             options: {
-              responsive:false, maintainAspectRatio:false,
-              plugins:{ legend:{display:false}, tooltip:{enabled:false} },
-              scales:{
-                x:{ ticks:{ autoSkip:true, maxTicksLimit:6, color:'#ffffff' }, grid:{ color:'rgba(255,255,255,0.1)' } },
-                y:{ ticks:{ color:'#ffffff' }, grid:{ color:'rgba(255,255,255,0.1)' } }
+              responsive: false,
+              maintainAspectRatio: false,
+              plugins: { legend: { display:false }, tooltip:{ enabled:false } },
+              scales: {
+                x: { ticks: { autoSkip:true, maxTicksLimit:6, color:'#ffffff' }, grid:{ color:'rgba(255,255,255,0.1)' } },
+                y: { ticks: { color:'#ffffff' }, grid:{ color:'rgba(255,255,255,0.1)' } }
               }
             }
           });
@@ -1426,18 +1406,20 @@ async function exportPdf() {
       const titleImg = await createTextImage('ProgressFit レポート', 20, 600, 40);
       const periodImg = await createTextImage(`期間: ${from} ～ ${to} (直近1年)`, 12, 600, 30);
 
-      const metricsToExport = [...MAIN_METRICS, ...Object.keys(METRICS).filter(k=>!MAIN_METRICS.includes(k))];
+      const metricsToExport = [...MAIN_METRICS, ...getMoreMetrics()];
       let first = true;
 
       for(const m of metricsToExport){
+        const mDef = METRICS[m];
         const imgData = await createChartImage(m);
-        const metricTitleImg = await createTextImage(METRICS[m].name, 14, 600, 25);
 
         if(first){
           doc.setFillColor(13, 35, 64);
           doc.rect(0, 0, 210, 297, 'F');
           doc.addImage(titleImg, 'PNG', 10, 10, 190, 15);
           doc.addImage(periodImg, 'PNG', 10, 27, 190, 10);
+
+          const metricTitleImg = await createTextImage(mDef.name, 14, 600, 25);
           doc.addImage(metricTitleImg, 'PNG', 10, 40, 190, 10);
           doc.addImage(imgData, 'PNG', 10, 50, 190, 100);
           first = false;
@@ -1445,10 +1427,12 @@ async function exportPdf() {
           doc.addPage();
           doc.setFillColor(13, 35, 64);
           doc.rect(0, 0, 210, 297, 'F');
+          const metricTitleImg = await createTextImage(mDef.name, 14, 600, 25);
           doc.addImage(metricTitleImg, 'PNG', 10, 10, 190, 10);
           doc.addImage(imgData, 'PNG', 10, 20, 190, 100);
         }
       }
+
       doc.save('progressfit_report.pdf');
     }, 450);
 
@@ -1459,7 +1443,9 @@ async function exportPdf() {
 }
 $('exportPdfBtn').addEventListener('click', exportPdf);
 
-/* init */
+/* =========================
+   init
+   ========================= */
 reloadRows();
 </script>
 </body>
