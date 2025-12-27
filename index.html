@@ -1,0 +1,1355 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#0b1220" />
+  <title>ProgressFit</title>
+
+  <!-- PWA / icons -->
+      <!-- PWA manifest and icons use relative paths so they work on GitHub Pages -->
+      <link rel="manifest" href="manifest.webmanifest" />
+      <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+      <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
+      <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="ProgressFit" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <!-- jsPDF (client-side PDF generation) -->
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+
+  <style>
+    :root{
+      --bg:#0b1220;
+      --border: rgba(255,255,255,.08);
+      --text:#e8eefc;
+      --muted:#9fb0d6;
+      --good:#7CFF8C;
+      --bad:#ff6a7a;
+      --radius:16px;
+      --shadow: 0 18px 60px rgba(0,0,0,.35);
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0; color:var(--text);
+      font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",Segoe UI,Roboto,Arial,sans-serif;
+      background:
+        radial-gradient(1200px 800px at 30% -10%, rgba(106,227,255,.18), transparent 55%),
+        radial-gradient(900px 700px at 110% 10%, rgba(167,139,250,.18), transparent 60%),
+        var(--bg);
+      padding: 14px 12px 14px;
+    }
+    .phone{
+      max-width: 430px;
+      margin: 0 auto;
+      min-height: calc(100dvh - 28px);
+      display:flex;
+      flex-direction:column;
+      gap:12px;
+    }
+    .top{
+      display:flex; align-items:center; justify-content:space-between; gap:10px;
+    }
+    .brand{display:flex; gap:10px; align-items:center; min-width:0}
+    .logo{
+      width:40px; height:40px; border-radius:14px;
+      background:linear-gradient(135deg,rgba(106,227,255,.28),rgba(167,139,250,.22));
+      box-shadow:var(--shadow);
+      flex:0 0 auto;
+    }
+    .titlewrap{min-width:0}
+    .title{font-size:18px; font-weight:900; margin:0; line-height:1.2}
+    .sub{font-size:12px; color:var(--muted); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+
+    .actions{display:flex; gap:8px; align-items:center; flex:0 0 auto}
+    .chip{
+      border:1px solid var(--border);
+      background: rgba(255,255,255,.03);
+      color: var(--muted);
+      border-radius:999px;
+      padding:8px 10px;
+      font-size:12px;
+      font-weight:900;
+      line-height:1;
+      user-select:none;
+    }
+    .chip b{color:var(--text)}
+    .chipBtn{
+      cursor:pointer;
+      color: var(--text);
+      background: rgba(106,227,255,.12);
+      border-color: rgba(106,227,255,.22);
+    }
+
+    .seg{
+      display:flex;
+      border:1px solid var(--border);
+      background: rgba(255,255,255,.03);
+      border-radius:999px;
+      padding:6px;
+      gap:6px;
+    }
+    .seg button{
+      border:0; background:transparent;
+      color:var(--muted);
+      font-weight:900;
+      padding:10px 12px;
+      border-radius:999px;
+      cursor:pointer;
+      line-height:1;
+      flex:1;
+    }
+    .seg button.active{
+      color:var(--text);
+      background: rgba(106,227,255,.18);
+    }
+
+    .kpis{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap:10px;
+    }
+    .kpi{
+      border:1px solid var(--border);
+      background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.03));
+      border-radius: var(--radius);
+      padding:12px;
+      box-shadow: var(--shadow);
+      min-height:86px;
+    }
+    .khead{display:flex; justify-content:space-between; align-items:baseline; gap:8px}
+    .klabel{font-size:12px;color:var(--muted);font-weight:900}
+    .kdelta{font-size:12px;font-weight:950}
+    .kval{display:flex; align-items:baseline; gap:8px; margin-top:6px}
+    .knum{font-size:26px;font-weight:1000; letter-spacing:.2px}
+    .kunit{font-size:12px;color:var(--muted);font-weight:900}
+
+    .panel{
+      border:1px solid var(--border);
+      background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.03));
+      border-radius: var(--radius);
+      padding:10px;
+      box-shadow: var(--shadow);
+      flex:1;
+      display:flex;
+      flex-direction:column;
+      min-height: 0;
+    }
+
+    .tabs{
+      display:flex; gap:6px; flex-wrap:wrap;
+      margin-bottom:6px;
+    }
+    .tab{
+      border:1px solid var(--border);
+      background: rgba(255,255,255,.03);
+      color: var(--muted);
+      border-radius:999px;
+      padding:8px 10px;
+      font-size:12px;
+      font-weight:900;
+      cursor:pointer;
+      line-height:1;
+      user-select:none;
+    }
+    .tab.active{
+      color: var(--text);
+      background: rgba(167,139,250,.16);
+      border-color: rgba(167,139,250,.30);
+    }
+
+    #metricTitle{
+      display:none;
+      font-size:14px;
+      font-weight:1000;
+      margin: 2px 0 6px;
+      color: var(--text);
+    }
+
+    .chartWrap{ position:relative; flex:1; min-height:0; }
+    /* iPhone UIバーでTrendが下見切れしない余白
+       ナビゲーションやホームインジケーターに隠れないよう、
+       safe-area-inset-bottomと十分な余白を確保する。
+       10pxでは足りない場合があるため、baseに30pxを加算し、
+       safe-area-inset-bottomも加味する。 */
+    #trendView{
+      padding-bottom: calc(30px + env(safe-area-inset-bottom));
+    }
+    canvas{width:100% !important; height:100% !important}
+
+    #moreView{
+      flex:1;
+      min-height:0;
+      overflow:auto;
+    }
+
+    .viewSeg{ margin-top:auto; }
+
+    .moreGrid{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap:10px;
+      padding-top:4px;
+    }
+
+    /* 新しいインポート/エクスポートボタンのコンテナ */
+    .importExport{
+      margin-top: 12px;
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+    }
+    .moreItem{
+      border:1px solid var(--border);
+      background: rgba(255,255,255,.03);
+      border-radius: 14px;
+      padding:10px;
+      cursor:pointer;
+      user-select:none;
+    }
+    .moreName{font-size:12px;color:var(--muted);font-weight:900}
+    .moreVal{margin-top:6px;font-size:18px;font-weight:1000}
+    .moreUnit{font-size:12px;color:var(--muted);font-weight:900;margin-left:6px}
+    .hint{font-size:12px;color:var(--muted);margin-top:10px;line-height:1.4}
+
+    .modalBg{
+      position:fixed; inset:0;
+      background: rgba(0,0,0,.55);
+      display:none;
+      align-items:center;
+      justify-content:center;
+      padding:16px;
+      z-index: 50;
+    }
+    .modal{
+      width:min(430px, 100%);
+      border:1px solid var(--border);
+      background: rgba(12,18,32,.92);
+      backdrop-filter: blur(10px);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+      padding:14px;
+    }
+    .mTitle{font-size:14px;font-weight:1000;margin:2px 0 10px}
+    .form{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap:10px;
+    }
+    .field{
+      border:1px solid var(--border);
+      background: rgba(255,255,255,.03);
+      border-radius: 14px;
+      padding:10px;
+    }
+    .field.full{ grid-column: 1 / -1; }
+    .field label{display:block;font-size:12px;color:var(--muted);font-weight:900;margin-bottom:6px}
+    .field input{
+      width:100%;
+      border:0;
+      outline:none;
+      background: transparent;
+      color: var(--text);
+      font-size:16px;
+      font-weight:950;
+    }
+    .mActions{display:flex; gap:8px; justify-content:flex-end; margin-top:12px}
+    .btn{
+      border:1px solid var(--border);
+      background: rgba(255,255,255,.03);
+      color: var(--text);
+      border-radius: 999px;
+      padding:10px 12px;
+      font-weight:950;
+      cursor:pointer;
+      line-height:1;
+      user-select:none;
+    }
+    .btnPrimary{
+      background: rgba(106,227,255,.14);
+      border-color: rgba(106,227,255,.30);
+    }
+    .btnDanger{
+      background: rgba(255,106,122,.12);
+      border-color: rgba(255,106,122,.25);
+    }
+
+    .listRow{
+      border:1px solid var(--border);
+      background: rgba(255,255,255,.03);
+      border-radius:12px;
+      padding:10px;
+      margin-bottom:8px;
+      display:flex;
+      justify-content:space-between;
+      gap:10px;
+    }
+    .listMain{font-size:13px; line-height:1.4}
+    .listDate{font-weight:1000}
+    .listSub{color:var(--muted); font-size:12px}
+    .listActions{display:flex; align-items:center}
+    .listEdit{
+      border:0;
+      background: rgba(106,227,255,.15);
+      color: var(--text);
+      border-radius:999px;
+      padding:6px 10px;
+      font-size:12px;
+      font-weight:900;
+      cursor:pointer;
+      user-select:none;
+    }
+
+    .safeBottom{height: env(safe-area-inset-bottom);}
+  </style>
+</head>
+
+<body>
+<div class="phone">
+  <div class="top">
+    <div class="brand">
+      <div class="logo"></div>
+      <div class="titlewrap">
+        <div class="title">ProgressFit</div>
+        <div class="sub" id="subtitle">—</div>
+      </div>
+    </div>
+    <div class="actions">
+      <div class="chip chipBtn" id="countChip">件数 <b id="count">0</b></div>
+      <div class="chip chipBtn" id="openTargets">目標</div>
+      <div class="chip chipBtn" id="openAdd">＋データ</div>
+    </div>
+  </div>
+
+  <div class="seg" id="rangeSeg">
+    <button class="active" data-range="all">全期間</button>
+    <button data-range="1y">1年</button>
+    <button data-range="3m">3ヶ月</button>
+  </div>
+
+  <div class="kpis">
+    <div class="kpi">
+      <div class="khead"><div class="klabel">体重</div><div class="kdelta" id="d_weight">—</div></div>
+      <div class="kval"><div class="knum" id="k_weight">—</div><div class="kunit">kg</div></div>
+    </div>
+    <div class="kpi">
+      <div class="khead"><div class="klabel">体脂肪率</div><div class="kdelta" id="d_bf">—</div></div>
+      <div class="kval"><div class="knum" id="k_bf">—</div><div class="kunit">%</div></div>
+    </div>
+    <div class="kpi">
+      <div class="khead"><div class="klabel">体脂肪量</div><div class="kdelta" id="d_fm">—</div></div>
+      <div class="kval"><div class="knum" id="k_fm">—</div><div class="kunit">kg</div></div>
+    </div>
+    <div class="kpi">
+      <div class="khead"><div class="klabel">筋肉量</div><div class="kdelta" id="d_mu">—</div></div>
+      <div class="kval"><div class="knum" id="k_mu">—</div><div class="kunit">kg</div></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div id="metricTitle"></div>
+
+    <div class="tabs" id="metricTabs">
+      <div class="tab active" data-m="weight_kg">体重</div>
+      <div class="tab" data-m="bodyfat_pct">体脂肪率</div>
+      <div class="tab" data-m="fatmass_kg">体脂肪量</div>
+      <div class="tab" data-m="muscle_kg">筋肉量</div>
+    </div>
+
+    <div class="chartWrap" id="trendView">
+      <canvas id="trend"></canvas>
+    </div>
+
+    <div class="chartWrap" id="bodyMapView" style="display:none;">
+      <canvas id="bodymap"></canvas>
+    </div>
+
+    <div id="moreView" style="display:none;">
+      <div class="moreGrid" id="moreGrid"></div>
+      <!-- インポート/エクスポート機能 -->
+      <div class="importExport">
+        <div class="chip chipBtn" id="exportCsvBtn">エクスポート</div>
+        <div class="chip chipBtn" id="importCsvBtn">インポート</div>
+        <!-- PDFレポート出力 -->
+        <div class="chip chipBtn" id="exportPdfBtn">PDF出力</div>
+        <input type="file" id="importCsvInput" accept=".csv" style="display:none;">
+      </div>
+    </div>
+
+    <div class="seg viewSeg" id="viewSeg">
+      <button class="active" data-view="trend">Trend</button>
+      <button data-view="bodymap">BodyMap</button>
+      <button data-view="more">More</button>
+    </div>
+  </div>
+
+  <div class="safeBottom"></div>
+</div>
+
+<!-- Targets Modal -->
+<div class="modalBg" id="modalTargetsBg">
+  <div class="modal">
+    <div class="mTitle">目標値（保存されます）</div>
+    <div class="form">
+      <div class="field">
+        <label>体重 目標 (kg)</label>
+        <input id="t_weight" inputmode="decimal" />
+      </div>
+      <div class="field">
+        <label>体脂肪率 目標 (%)</label>
+        <input id="t_bf" inputmode="decimal" />
+      </div>
+      <div class="field">
+        <label>体脂肪量 目標 (kg)</label>
+        <input id="t_fm" inputmode="decimal" />
+      </div>
+      <div class="field">
+        <label>筋肉量 目標 (kg)</label>
+        <input id="t_mu" inputmode="decimal" />
+      </div>
+      <div class="field full">
+        <label>身長 (cm) ※BMI自動計算に使う（任意）</label>
+        <input id="t_height" inputmode="decimal" placeholder="例: 175" />
+      </div>
+    </div>
+    <div class="mActions">
+      <button class="btn" id="closeTargets">キャンセル</button>
+      <button class="btn btnPrimary" id="saveTargets">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add/Edit Modal -->
+<div class="modalBg" id="modalAddBg">
+  <div class="modal">
+    <div class="mTitle" id="addTitle">データ追加</div>
+    <div class="form">
+      <div class="field full">
+        <label>日付</label>
+        <input id="a_date" type="date" />
+      </div>
+
+      <div class="field">
+        <label>体重 (kg)</label>
+        <input id="a_weight" inputmode="decimal" />
+      </div>
+      <div class="field">
+        <label>体脂肪率 (%)</label>
+        <input id="a_bf" inputmode="decimal" />
+      </div>
+
+      <div class="field">
+        <label>体脂肪量 (kg)</label>
+        <input id="a_fm" inputmode="decimal" />
+      </div>
+      <div class="field">
+        <label>筋肉量 (kg)</label>
+        <input id="a_mu" inputmode="decimal" />
+      </div>
+
+      <div class="field">
+        <label>BMI（空なら身長から計算）</label>
+        <input id="a_bmi" inputmode="decimal" placeholder="任意" />
+      </div>
+      <div class="field">
+        <label>フィットネススコア (pt)</label>
+        <input id="a_fit" inputmode="decimal" placeholder="任意" />
+      </div>
+
+      <div class="field">
+        <label>骨格筋量 (kg)</label>
+        <input id="a_smm" inputmode="decimal" placeholder="任意" />
+      </div>
+      <div class="field">
+        <label>内臓脂肪レベル</label>
+        <input id="a_vfl" inputmode="decimal" placeholder="任意" />
+      </div>
+    </div>
+
+    <div class="hint">※必須：日付 / 体重 / 体脂肪率 / 体脂肪量 / 筋肉量（BMIは身長が設定されていれば自動）</div>
+
+    <div class="mActions">
+      <button class="btn" id="closeAdd">キャンセル</button>
+      <button class="btn btnDanger" id="deleteOne" style="display:none;">この1件を削除</button>
+      <button class="btn btnPrimary" id="saveAdd">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- List Modal -->
+<div class="modalBg" id="modalListBg">
+  <div class="modal">
+    <div class="mTitle">記録一覧</div>
+    <div id="listWrap" style="max-height:60vh;overflow:auto;"></div>
+    <div class="mActions">
+      <button class="btn" id="closeList">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ===== Base CSV（33件フル内包） ===== */
+const BASE_CSV = `date,weight_kg,bodyfat_pct,bmi,fitness_score,fatmass_kg,muscle_kg,skeletal_muscle_kg,visceral_fat_level
+2024-07-04,91.2,33.0,30.0,47,28.6,58.0,33.2,17
+2024-07-25,89.1,32.1,29.1,47,28.6,57.4,32.8,15
+2024-08-01,89.2,31.4,29.1,44,28.0,58.0,33.2,15
+2024-09-17,86.4,30.7,28.2,47,26.5,56.8,32.5,14
+2024-10-10,85.9,30.7,28.0,49,26.4,56.4,32.2,14
+2024-11-07,83.9,29.9,27.4,53,25.1,55.8,31.9,13
+2024-11-21,83.6,32.9,27.3,43,27.5,53.2,30.4,14
+2024-11-28,82.3,29.8,26.9,52,24.5,54.8,31.3,13
+2024-12-05,82.1,29.7,26.8,54,24.4,54.7,31.3,13
+2024-12-19,81.1,29.2,26.5,54,23.7,54.4,31.1,13
+2025-01-09,82.3,30.0,26.9,52,24.7,54.6,31.2,13
+2025-01-23,80.9,30.5,26.4,51,24.7,53.3,30.5,13
+2025-02-06,82.3,29.7,26.9,54,24.4,54.9,31.4,13
+2025-02-22,81.8,29.8,26.7,54,24.4,54.4,31.1,13
+2025-03-13,81.0,28.7,26.4,56,23.2,54.8,31.3,13
+2025-03-27,81.5,28.3,26.6,57,23.1,55.4,31.7,13
+2025-04-10,81.2,28.5,26.5,56,23.1,55.1,31.5,13
+2025-04-22,80.8,27.8,26.4,58,22.5,55.3,31.6,12
+2025-05-08,80.1,28.4,26.2,58,22.7,54.4,31.1,12
+2025-05-25,79.8,27.3,26.1,60,21.8,55.0,31.4,12
+2025-06-05,79.1,27.2,25.8,60,21.5,54.6,31.2,12
+2025-06-28,79.7,27.8,26.0,60,22.2,54.5,31.2,12
+2025-07-10,79.4,27.9,25.9,60,22.2,54.2,31.0,12
+2025-08-07,78.1,26.9,25.5,62,21.0,54.1,30.9,12
+2025-08-21,77.8,27.1,25.4,62,21.1,53.8,30.7,12
+2025-09-04,76.7,26.0,25.0,66,19.9,53.9,30.8,11
+2025-09-18,76.0,25.8,24.8,65,19.6,53.5,30.6,11
+2025-10-02,74.7,25.7,24.4,67,19.2,52.6,30.1,11
+2025-10-16,74.6,25.4,24.4,69,18.9,52.8,30.2,10
+2025-10-30,73.7,24.1,24.1,71,17.8,53.0,30.3,10
+2025-11-13,72.7,24.4,23.7,71,17.7,52.1,29.8,10
+2025-11-27,72.3,24.1,23.6,73,17.4,52.0,29.8,10
+2025-12-11,71.5,23.0,23.3,75,16.4,52.2,29.9,9
+2025-12-25,71.7,22.2,23.4,75,15.9,52.9,30.2,9`;
+
+/* ===== configs ===== */
+const METRICS = {
+  weight_kg:           { name:'体重', unit:'kg' },
+  bodyfat_pct:         { name:'体脂肪率', unit:'%'  },
+  fatmass_kg:          { name:'体脂肪量', unit:'kg' },
+  muscle_kg:           { name:'筋肉量', unit:'kg'  },
+  bmi:                 { name:'BMI', unit:''       },
+  fitness_score:       { name:'フィットネススコア', unit:'pt' },
+  skeletal_muscle_kg:  { name:'骨格筋量', unit:'kg' },
+  visceral_fat_level:  { name:'内臓脂肪', unit:'lv' },
+};
+const MAIN_METRICS = ['weight_kg','bodyfat_pct','fatmass_kg','muscle_kg'];
+const MORE_METRICS = ['fitness_score','bmi','skeletal_muscle_kg','visceral_fat_level'];
+
+/* ===== storage keys ===== */
+const TARGET_KEY  = 'progressfit_targets_v2';
+const ADDS_KEY    = 'progressfit_added_rows_v1';
+const DELETED_KEY = 'progressfit_deleted_dates_v1';
+
+/* ===== utils ===== */
+const $ = (id)=>document.getElementById(id);
+function fmt1(x){ return Number.isFinite(x) ? (Math.round(x*10)/10).toFixed(1) : '—'; }
+function numOrNull(v){ return (v===undefined||v===null||v==='') ? null : Number(v); }
+
+function parseCsv(csv){
+  return csv.trim().split(/\n/).slice(1).map(l=>{
+    const c = l.split(',');
+    return {
+      date: c[0],
+      weight_kg: numOrNull(c[1]),
+      bodyfat_pct: numOrNull(c[2]),
+      bmi: numOrNull(c[3]),
+      fitness_score: numOrNull(c[4]),
+      fatmass_kg: numOrNull(c[5]),
+      muscle_kg: numOrNull(c[6]),
+      skeletal_muscle_kg: numOrNull(c[7]),
+      visceral_fat_level: numOrNull(c[8]),
+    };
+  });
+}
+const baseRows = parseCsv(BASE_CSV);
+
+/* ===== targets ===== */
+const defaultTargets = { weight_kg: 75.0, bodyfat_pct: 20.0, fatmass_kg: 16.0, muscle_kg: 55.0, height_cm: null };
+let targets = loadTargets();
+function loadTargets(){
+  try{
+    const raw = localStorage.getItem(TARGET_KEY);
+    return raw ? { ...defaultTargets, ...JSON.parse(raw) } : { ...defaultTargets };
+  }catch(e){ return { ...defaultTargets }; }
+}
+function saveTargets(){ localStorage.setItem(TARGET_KEY, JSON.stringify(targets)); }
+
+/* ===== adds / deleted ===== */
+function loadAdds(){
+  try{
+    const raw = localStorage.getItem(ADDS_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
+  }catch(e){ return []; }
+}
+function saveAdds(arr){ localStorage.setItem(ADDS_KEY, JSON.stringify(arr)); }
+
+function loadDeleted(){
+  try{
+    const raw = localStorage.getItem(DELETED_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
+  }catch(e){ return []; }
+}
+function saveDeleted(arr){ localStorage.setItem(DELETED_KEY, JSON.stringify(arr)); }
+
+/* ===== merge ===== */
+function mergeRows(){
+  const adds = loadAdds();
+  const deleted = new Set(loadDeleted());
+
+  const map = new Map();
+  for(const r of baseRows){
+    if(!deleted.has(r.date)) map.set(r.date, r);
+  }
+  for(const r of adds){
+    if(!deleted.has(r.date)) map.set(r.date, r);
+  }
+  return Array.from(map.values()).sort((a,b)=>a.date.localeCompare(b.date));
+}
+
+/* ===== state ===== */
+let rows = mergeRows();
+let currentRange = 'all';
+let currentMetric = 'weight_kg';
+let currentView = 'trend'; // trend | bodymap | more
+let showMetricTabs = true; // Trend直はtrue, More/BodyMap経由はfalse
+
+let trendChart = null;
+let bodyMapChart = null;
+
+let editMode = false;
+let editOriginalDate = null;
+
+/* ===== range filter ===== */
+function filt(){
+  if(currentRange==='all') return rows;
+  const end = new Date(rows.at(-1).date);
+  const d = new Date(end);
+  if(currentRange==='1y') d.setFullYear(d.getFullYear()-1);
+  if(currentRange==='3m') d.setMonth(d.getMonth()-3);
+  return rows.filter(r => new Date(r.date) >= d);
+}
+
+/* ===== KPI delta ===== */
+function setDelta(el, v, goodWhenDecrease){
+  if(!Number.isFinite(v)){ el.textContent='—'; el.style.color='var(--muted)'; return; }
+  const r = Math.round(v*10)/10;
+  el.textContent = (r>0?'+':'') + r.toFixed(1);
+  const good = goodWhenDecrease ? (r<0) : (r>0);
+  el.style.color = good ? 'var(--good)' : 'var(--bad)';
+}
+
+/* ===== modal helper ===== */
+function openModal(bg){ bg.style.display='flex'; }
+function closeModal(bg){ bg.style.display='none'; }
+function closeOnBg(bg){
+  bg.addEventListener('click', (e)=>{ if(e.target===bg) closeModal(bg); });
+}
+
+/* ===== chart plugins ===== */
+const targetLinePlugin = {
+  id: 'targetLine',
+  afterDatasetsDraw(chart){
+    const t = targets[currentMetric];
+    if(t === undefined || t === null || Number.isNaN(+t)) return;
+    const y = chart.scales.y.getPixelForValue(+t);
+    const {left,right,top,bottom} = chart.chartArea;
+    if(y < top || y > bottom) return;
+
+    const ctx = chart.ctx;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(124,255,140,.75)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([6,6]);
+    ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(right, y); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(124,255,140,.9)';
+    ctx.font = '12px -apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif';
+    ctx.fillText('TARGET ' + (+t).toFixed(1), left+6, Math.max(top+14, y-6));
+    ctx.restore();
+  }
+};
+
+const bodyMapBg = {
+  id: 'bodyMapBg',
+  beforeDraw(chart){
+    const {ctx, chartArea} = chart;
+    if(!chartArea) return;
+    const {left, right, top, bottom} = chartArea;
+
+    ctx.save();
+    ctx.fillStyle = 'rgba(255,255,255,0.02)';
+    ctx.fillRect(left, top, right-left, bottom-top);
+
+    const xScale = chart.scales.x;
+    const yScale = chart.scales.y;
+
+    const x = xScale.getPixelForValue(25);
+    const y = yScale.getPixelForValue(25);
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, bottom); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(right, y); ctx.stroke();
+
+    ctx.fillStyle = 'rgba(159,176,214,0.75)';
+    ctx.font = '12px -apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif';
+    ctx.fillText('BMI 25', x+6, top+16);
+    ctx.fillText('BF 25%', left+6, y-8);
+
+    const h = targets.height_cm ? (+targets.height_cm/100) : null;
+    const targetBf = targets.bodyfat_pct;
+    let targetBmi = null;
+    if(h && Number.isFinite(+targets.weight_kg)) targetBmi = +targets.weight_kg/(h*h);
+
+    if(Number.isFinite(targetBf) && Number.isFinite(targetBmi)){
+      const tx = xScale.getPixelForValue(targetBmi);
+      const ty = yScale.getPixelForValue(targetBf);
+      ctx.fillStyle = 'rgba(124,255,140,0.9)';
+      ctx.beginPath(); ctx.arc(tx, ty, 4, 0, Math.PI*2); ctx.fill();
+      ctx.fillText('TARGET', tx+8, ty-8);
+    }
+    ctx.restore();
+  }
+};
+
+/* ===== charts ===== */
+function ensureTrend(data){
+  const labels = data.map(r=>r.date);
+  const m = METRICS[currentMetric] || {name:currentMetric, unit:''};
+  const values = data.map(r=>r[currentMetric]);
+  const ctx = $('trend');
+
+  if(!trendChart){
+    trendChart = new Chart(ctx, {
+      type:'line',
+      data:{ labels, datasets:[{
+        label: m.name + (m.unit?` (${m.unit})`:``),
+        data: values,
+        tension: .35,
+        pointRadius: 2,
+        pointHoverRadius: 5,
+        borderWidth: 2,
+        fill: false   // 面塗りなし
+      }]},
+      options:{
+        responsive:true,
+        maintainAspectRatio:false,
+        layout:{ padding:{ bottom: 8 } },
+        plugins:{ legend:{display:false}, tooltip:{ mode:'index', intersect:false } },
+        interaction:{ mode:'index', intersect:false },
+        scales:{
+          x:{ ticks:{ color:'#9fb0d6', maxRotation:0, autoSkip:true }, grid:{ color:'rgba(255,255,255,.06)' } },
+          y:{ ticks:{ color:'#9fb0d6' }, grid:{ color:'rgba(255,255,255,.06)' } }
+        }
+      },
+      plugins:[targetLinePlugin]
+    });
+  }else{
+    trendChart.data.labels = labels;
+    trendChart.data.datasets[0].data = values;
+    trendChart.data.datasets[0].label = m.name + (m.unit?` (${m.unit})`:``);
+    trendChart.update();
+  }
+}
+
+function ensureBodyMap(data){
+  const pts = data
+    .filter(r=>Number.isFinite(r.bmi) && Number.isFinite(r.bodyfat_pct))
+    .map(r=>({x:r.bmi, y:r.bodyfat_pct, d:r.date}));
+
+  const first = pts[0];
+  const last = pts.at(-1);
+  const ctx = $('bodymap');
+
+  if(!bodyMapChart){
+    bodyMapChart = new Chart(ctx, {
+      type:'scatter',
+      data:{ datasets:[
+        { label:'推移', data:pts, pointRadius:3, pointHoverRadius:5 },
+        { label:'開始', data:first?[first]:[], pointRadius:7, pointHoverRadius:8 },
+        { label:'最新', data:last?[last]:[], pointRadius:7, pointHoverRadius:8 },
+      ]},
+      options:{
+        responsive:true,
+        maintainAspectRatio:false,
+        plugins:{
+          legend:{ labels:{ color:'#e8eefc' } },
+          tooltip:{ callbacks:{ label:(c)=>` BMI ${c.raw.x.toFixed(1)} / BF ${c.raw.y.toFixed(1)}% (${c.raw.d||''})` } }
+        },
+        scales:{
+          x:{ title:{display:true,text:'BMI',color:'#9fb0d6'}, ticks:{ color:'#9fb0d6' }, grid:{ color:'rgba(255,255,255,.06)' } },
+          y:{ title:{display:true,text:'体脂肪率(%)',color:'#9fb0d6'}, ticks:{ color:'#9fb0d6' }, grid:{ color:'rgba(255,255,255,.06)' } },
+        }
+      },
+      plugins:[bodyMapBg]
+    });
+  }else{
+    bodyMapChart.data.datasets[0].data = pts;
+    bodyMapChart.data.datasets[1].data = first?[first]:[];
+    bodyMapChart.data.datasets[2].data = last?[last]:[];
+    bodyMapChart.update();
+  }
+}
+
+/* ===== views ===== */
+function setView(v, via='direct'){
+  currentView = v;
+
+  if(v === 'trend'){
+    if(via === 'direct') showMetricTabs = true;
+  }else{
+    showMetricTabs = false;
+  }
+
+  $('trendView').style.display   = (v==='trend') ? 'block' : 'none';
+  $('bodyMapView').style.display = (v==='bodymap') ? 'block' : 'none';
+  $('moreView').style.display    = (v==='more') ? 'block' : 'none';
+
+  $('metricTabs').style.display  = (v==='trend' && showMetricTabs) ? 'flex' : 'none';
+  $('metricTitle').style.display = (v==='trend' && !showMetricTabs) ? 'block' : 'none';
+
+  document.querySelectorAll('#viewSeg button').forEach(b=>{
+    b.classList.toggle('active', b.dataset.view===v);
+  });
+
+  render();
+}
+
+function renderMore(latest){
+  const grid = $('moreGrid');
+  grid.innerHTML = '';
+  for(const key of MORE_METRICS){
+    const m = METRICS[key];
+    const v = latest[key];
+    const item = document.createElement('div');
+    item.className = 'moreItem';
+    item.innerHTML = `
+      <div class="moreName">${m.name}</div>
+      <div class="moreVal">${fmt1(v)}${m.unit?`<span class="moreUnit">${m.unit}</span>`:''}</div>
+    `;
+    item.onclick = ()=>{
+      currentMetric = key;
+      document.querySelectorAll('#metricTabs .tab').forEach(t=>t.classList.remove('active'));
+      $('metricTitle').textContent = m.name;
+      setView('trend','fromMore');
+    };
+    grid.appendChild(item);
+  }
+}
+
+function render(){
+  const data = filt();
+  if(!data.length) return;
+
+  $('count').textContent = data.length;
+  $('subtitle').textContent = `${data[0].date} → ${data.at(-1).date}`;
+
+  const start = data[0];
+  const end = data.at(-1);
+
+  $('k_weight').textContent = fmt1(end.weight_kg);
+  $('k_bf').textContent     = fmt1(end.bodyfat_pct);
+  $('k_fm').textContent     = fmt1(end.fatmass_kg);
+  $('k_mu').textContent     = fmt1(end.muscle_kg);
+
+  setDelta($('d_weight'), end.weight_kg - start.weight_kg, true);
+  setDelta($('d_bf'),     end.bodyfat_pct - start.bodyfat_pct, true);
+  setDelta($('d_fm'),     end.fatmass_kg - start.fatmass_kg, true);
+  setDelta($('d_mu'),     end.muscle_kg - start.muscle_kg, false);
+
+  $('metricTitle').textContent = (METRICS[currentMetric]?.name || currentMetric);
+
+  if(currentView==='trend') ensureTrend(data);
+  if(currentView==='bodymap') ensureBodyMap(data);
+  if(currentView==='more') renderMore(end);
+}
+
+/* ===== UI events ===== */
+document.querySelectorAll('#rangeSeg button').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    document.querySelectorAll('#rangeSeg button').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+    currentRange = b.dataset.range;
+    render();
+  });
+});
+
+document.querySelectorAll('#viewSeg button').forEach(b=>{
+  b.addEventListener('click', ()=> setView(b.dataset.view,'direct'));
+});
+
+$('metricTabs').addEventListener('click', (e)=>{
+  const tab = e.target.closest('.tab');
+  if(!tab) return;
+  document.querySelectorAll('#metricTabs .tab').forEach(t=>t.classList.remove('active'));
+  tab.classList.add('active');
+  currentMetric = tab.dataset.m;
+  showMetricTabs = true;
+  setView('trend','direct');
+});
+
+/* ===== modals ===== */
+const targetsBg = $('modalTargetsBg');
+const addBg     = $('modalAddBg');
+const listBg    = $('modalListBg');
+
+closeOnBg(targetsBg);
+closeOnBg(addBg);
+closeOnBg(listBg);
+
+/* ===== Targets ===== */
+$('openTargets').onclick = ()=>{
+  $('t_weight').value = Number.isFinite(targets.weight_kg)?targets.weight_kg.toFixed(1):'';
+  $('t_bf').value     = Number.isFinite(targets.bodyfat_pct)?targets.bodyfat_pct.toFixed(1):'';
+  $('t_fm').value     = Number.isFinite(targets.fatmass_kg)?targets.fatmass_kg.toFixed(1):'';
+  $('t_mu').value     = Number.isFinite(targets.muscle_kg)?targets.muscle_kg.toFixed(1):'';
+  $('t_height').value = targets.height_cm ? String(targets.height_cm) : '';
+  openModal(targetsBg);
+};
+$('closeTargets').onclick = ()=> closeModal(targetsBg);
+
+$('saveTargets').onclick = ()=>{
+  const w  = parseFloat($('t_weight').value);
+  const bf = parseFloat($('t_bf').value);
+  const fm = parseFloat($('t_fm').value);
+  const mu = parseFloat($('t_mu').value);
+  const h  = parseFloat($('t_height').value);
+
+  if(!Number.isNaN(w))  targets.weight_kg = w;
+  if(!Number.isNaN(bf)) targets.bodyfat_pct = bf;
+  if(!Number.isNaN(fm)) targets.fatmass_kg = fm;
+  if(!Number.isNaN(mu)) targets.muscle_kg = mu;
+  targets.height_cm = (!Number.isNaN(h) && h>0) ? h : null;
+
+  saveTargets();
+  closeModal(targetsBg);
+
+  if(trendChart) trendChart.update();
+  if(bodyMapChart) bodyMapChart.update();
+};
+
+/* ===== add/edit ===== */
+function resetForm(){
+  $('a_date').value = '';
+  $('a_weight').value = '';
+  $('a_bf').value = '';
+  $('a_fm').value = '';
+  $('a_mu').value = '';
+  $('a_bmi').value = '';
+  $('a_fit').value = '';
+  $('a_smm').value = '';
+  $('a_vfl').value = '';
+}
+
+function openAdd(){
+  editMode = false;
+  editOriginalDate = null;
+  $('addTitle').textContent = 'データ追加';
+  $('deleteOne').style.display = 'none';
+  resetForm();
+  openModal(addBg);
+}
+function openEdit(row){
+  editMode = true;
+  editOriginalDate = row.date;
+  $('addTitle').textContent = 'データ更新';
+  $('deleteOne').style.display = 'inline-block';
+
+  $('a_date').value   = row.date || '';
+  $('a_weight').value = row.weight_kg ?? '';
+  $('a_bf').value     = row.bodyfat_pct ?? '';
+  $('a_fm').value     = row.fatmass_kg ?? '';
+  $('a_mu').value     = row.muscle_kg ?? '';
+  $('a_bmi').value    = row.bmi ?? '';
+  $('a_fit').value    = row.fitness_score ?? '';
+  $('a_smm').value    = row.skeletal_muscle_kg ?? '';
+  $('a_vfl').value    = row.visceral_fat_level ?? '';
+
+  openModal(addBg);
+}
+
+$('openAdd').onclick = openAdd;
+$('closeAdd').onclick = ()=> closeModal(addBg);
+
+function computeBmiFromHeight(weightKg){
+  const h = targets.height_cm ? (+targets.height_cm/100) : null;
+  if(!h || !Number.isFinite(weightKg)) return null;
+  return weightKg / (h*h);
+}
+
+$('saveAdd').onclick = ()=>{
+  const date = ($('a_date').value || '').trim();
+  const weight = parseFloat($('a_weight').value);
+  const bf = parseFloat($('a_bf').value);
+  const fm = parseFloat($('a_fm').value);
+  const mu = parseFloat($('a_mu').value);
+
+  let bmi = parseFloat($('a_bmi').value);
+  const fit = parseFloat($('a_fit').value);
+  const smm = parseFloat($('a_smm').value);
+  const vfl = parseFloat($('a_vfl').value);
+
+  if(!date){ alert('日付を選んでね'); return; }
+  if([weight,bf,fm,mu].some(x=>Number.isNaN(x))){
+    alert('必須が足りないよ（体重/体脂肪率/体脂肪量/筋肉量）');
+    return;
+  }
+  if(Number.isNaN(bmi)){
+    const calc = computeBmiFromHeight(weight);
+    if(calc===null){
+      alert('BMIが空なら、目標設定で身長(cm)を入れてね（自動計算する）');
+      return;
+    }
+    bmi = calc;
+  }
+
+  const row = {
+    date,
+    weight_kg: weight,
+    bodyfat_pct: bf,
+    bmi: bmi,
+    fitness_score: Number.isNaN(fit) ? null : fit,
+    fatmass_kg: fm,
+    muscle_kg: mu,
+    skeletal_muscle_kg: Number.isNaN(smm) ? null : smm,
+    visceral_fat_level: Number.isNaN(vfl) ? null : vfl,
+  };
+
+  let adds = loadAdds();
+  let deleted = loadDeleted();
+
+  // 日付変更＝移動（元の日付を tombstone）
+  if(editMode && editOriginalDate && editOriginalDate !== date){
+    adds = adds.filter(r=>r.date !== editOriginalDate);
+    if(!deleted.includes(editOriginalDate)) deleted.push(editOriginalDate);
+  }
+
+  // いまの日付で上書き
+  adds = adds.filter(r=>r.date !== date);
+  adds.push(row);
+
+  saveAdds(adds);
+  saveDeleted(deleted);
+
+  rows = mergeRows();
+
+  editMode = false;
+  editOriginalDate = null;
+
+  closeModal(addBg);
+  render();
+};
+
+$('deleteOne').onclick = ()=>{
+  if(!editMode || !editOriginalDate) return;
+  if(!confirm(`${editOriginalDate} のデータを削除する？`)) return;
+
+  let adds = loadAdds().filter(r => r.date !== editOriginalDate);
+  saveAdds(adds);
+
+  let deleted = loadDeleted();
+  if(!deleted.includes(editOriginalDate)) deleted.push(editOriginalDate);
+  saveDeleted(deleted);
+
+  rows = mergeRows();
+
+  editMode = false;
+  editOriginalDate = null;
+
+  closeModal(addBg);
+  render();
+};
+
+/* ===== list ===== */
+$('closeList').onclick = ()=> closeModal(listBg);
+
+function renderList(){
+  const data = filt().slice().sort((a,b)=>b.date.localeCompare(a.date));
+  const wrap = $('listWrap');
+  wrap.innerHTML = '';
+  for(const r of data){
+    const div = document.createElement('div');
+    div.className = 'listRow';
+    div.innerHTML = `
+      <div class="listMain">
+        <div class="listDate">${r.date}</div>
+        <div class="listSub">${fmt1(r.weight_kg)}kg / ${fmt1(r.bodyfat_pct)}% / 脂肪${fmt1(r.fatmass_kg)}kg / 筋肉${fmt1(r.muscle_kg)}kg</div>
+      </div>
+      <div class="listActions"><button class="listEdit">更新</button></div>
+    `;
+    div.querySelector('.listEdit').onclick = ()=>{
+      closeModal(listBg);
+      openEdit(r);
+    };
+    wrap.appendChild(div);
+  }
+}
+$('countChip').onclick = ()=>{
+  renderList();
+  openModal(listBg);
+};
+
+/* ===== import / export ===== */
+// 現在のデータをCSV形式でダウンロードする
+function exportCsv(){
+  // CSV ヘッダー
+  let csv = 'date,weight_kg,bodyfat_pct,bmi,fitness_score,fatmass_kg,muscle_kg,skeletal_muscle_kg,visceral_fat_level\n';
+  // データを取得してCSVに変換
+  const data = mergeRows();
+  data.forEach(r => {
+    csv += [
+      r.date || '',
+      Number.isFinite(r.weight_kg)          ? r.weight_kg          : '',
+      Number.isFinite(r.bodyfat_pct)        ? r.bodyfat_pct        : '',
+      Number.isFinite(r.bmi)                ? r.bmi                : '',
+      Number.isFinite(r.fitness_score)      ? r.fitness_score      : '',
+      Number.isFinite(r.fatmass_kg)         ? r.fatmass_kg         : '',
+      Number.isFinite(r.muscle_kg)          ? r.muscle_kg          : '',
+      Number.isFinite(r.skeletal_muscle_kg) ? r.skeletal_muscle_kg : '',
+      Number.isFinite(r.visceral_fat_level) ? r.visceral_fat_level : ''
+    ].join(',') + '\n';
+  });
+  const blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'progressfit_data.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// 現在のデータをPDFレポートとしてダウンロードする
+async function exportPdf() {
+  try{
+    // jsPDF ライブラリから jsPDF クラスを取得
+    const { jsPDF } = window.jspdf || {};
+    if(!jsPDF){
+      alert('PDFライブラリの読み込みに失敗しました');
+      return;
+    }
+    // データを準備: 直近1年分
+    const all = mergeRows();
+    if(!all.length){
+      alert('出力するデータがありません');
+      return;
+    }
+    // 最新の日付を基準に1年前の日付を計算
+    const endDate = new Date(all.at(-1).date);
+    const startDate = new Date(endDate);
+    startDate.setFullYear(startDate.getFullYear() - 1);
+    // 直近1年分の行のみ取得
+    const rows1y = all.filter(r => new Date(r.date) >= startDate);
+    // PDF生成
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    // Helper: convert text into PNG image via canvas so that Japanese characters render correctly
+    async function createTextImage(text, fontSize, width, height) {
+      // width/height in px
+      const c = document.createElement('canvas');
+      c.width = width;
+      c.height = height;
+      const ctx = c.getContext('2d');
+      // dark background matching app
+      ctx.fillStyle = '#0D2340';
+      ctx.fillRect(0, 0, c.width, c.height);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = `${fontSize}px sans-serif`;
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, 5, height / 2);
+      return c.toDataURL('image/png');
+    }
+
+    // Period text
+    const from = rows1y[0].date;
+    const to = rows1y[rows1y.length - 1].date;
+    const titleImg = await createTextImage('ProgressFit レポート', 20, 600, 40);
+    const periodImg = await createTextImage(`期間: ${from} ～ ${to} (直近1年)`, 12, 600, 30);
+    // グラフ生成関数: 指定したメトリックの画像を返す
+    async function createChartImage(metricKey) {
+      return new Promise((resolve) => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 600;
+        canvas.height = 300;
+        const ctx = canvas.getContext('2d');
+        // dark background fill matching the app
+        ctx.fillStyle = '#0D2340';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        const labels = rows1y.map((r) => r.date);
+        const values = rows1y.map((r) => {
+          const v = r[metricKey];
+          return v === null || v === undefined || Number.isNaN(v) ? null : v;
+        });
+        const cfg = {
+          type: 'line',
+          data: {
+            labels: labels,
+            datasets: [
+              {
+                label:
+                  METRICS[metricKey].name +
+                  (METRICS[metricKey].unit ? ` (${METRICS[metricKey].unit})` : ''),
+                data: values,
+                fill: false,
+                tension: 0.1,
+                borderColor: '#6f97ff',
+                backgroundColor: '#6f97ff'
+              }
+            ]
+          },
+          options: {
+            responsive: false,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: {
+                display: false
+              },
+              tooltip: {
+                enabled: false
+              }
+            },
+            scales: {
+              x: {
+                ticks: {
+                  autoSkip: true,
+                  maxTicksLimit: 6,
+                  color: '#ffffff'
+                },
+                grid: {
+                  color: 'rgba(255,255,255,0.1)'
+                }
+              },
+              y: {
+                ticks: {
+                  color: '#ffffff'
+                },
+                grid: {
+                  color: 'rgba(255,255,255,0.1)'
+                }
+              }
+            }
+          }
+        };
+        const chart = new Chart(ctx, cfg);
+        setTimeout(() => {
+          const img = chart.toBase64Image();
+          chart.destroy();
+          resolve(img);
+        }, 100);
+      });
+    }
+    // 出力対象メトリック: MAIN_METRICS + MORE_METRICS
+    const metricsToExport = [...MAIN_METRICS, ...MORE_METRICS];
+    let firstGraph = true;
+    for (const m of metricsToExport) {
+      // グラフ画像を生成
+      const imgData = await createChartImage(m);
+      if (firstGraph) {
+        // 表紙ページ: 背景塗り潰し
+        doc.setFillColor(13, 35, 64);
+        doc.rect(0, 0, 210, 297, 'F');
+        // タイトル・期間
+        doc.addImage(titleImg, 'PNG', 10, 10, 190, 15);
+        doc.addImage(periodImg, 'PNG', 10, 27, 190, 10);
+        // グラフタイトル
+        const metricTitleImg = await createTextImage(METRICS[m].name, 14, 600, 25);
+        doc.addImage(metricTitleImg, 'PNG', 10, 40, 190, 10);
+        // グラフ
+        doc.addImage(imgData, 'PNG', 10, 50, 190, 100);
+        firstGraph = false;
+      } else {
+        doc.addPage();
+        doc.setFillColor(13, 35, 64);
+        doc.rect(0, 0, 210, 297, 'F');
+        const metricTitleImg = await createTextImage(METRICS[m].name, 14, 600, 25);
+        doc.addImage(metricTitleImg, 'PNG', 10, 10, 190, 10);
+        doc.addImage(imgData, 'PNG', 10, 20, 190, 100);
+      }
+    }
+    // PDFを保存
+    doc.save('progressfit_report.pdf');
+  } catch(err){
+    console.error(err);
+    alert('PDF生成に失敗しました');
+  }
+}
+
+// CSVファイルを読み込みデータを取り込む
+function handleImportFiles(files){
+  const file = files && files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = function(evt){
+    try{
+      const text = (evt.target.result || '').trim();
+      if(!text){ alert('ファイルが空です'); return; }
+      const lines = text.split(/\r?\n/);
+      if(!lines.length){ alert('データが見つかりません'); return; }
+      // 1行目はヘッダなので読み飛ばす
+      const header = lines.shift().split(',');
+      const imported = [];
+      for(const line of lines){
+        if(!line) continue;
+        const cols = line.split(',');
+        imported.push({
+          date: cols[0],
+          weight_kg:          numOrNull(cols[1]),
+          bodyfat_pct:        numOrNull(cols[2]),
+          bmi:                numOrNull(cols[3]),
+          fitness_score:      numOrNull(cols[4]),
+          fatmass_kg:         numOrNull(cols[5]),
+          muscle_kg:          numOrNull(cols[6]),
+          skeletal_muscle_kg: numOrNull(cols[7]),
+          visceral_fat_level: numOrNull(cols[8]),
+        });
+      }
+      // 現在の追加データと削除データを取得
+      let adds = loadAdds();
+      let deleted = loadDeleted();
+      // インポートした各行を追加または更新
+      for(const row of imported){
+        // 既存の追加データから同じ日付を取り除く
+        adds = adds.filter(r=>r.date !== row.date);
+        adds.push(row);
+        // 削除リストから対象日付を除外
+        deleted = deleted.filter(d=>d !== row.date);
+      }
+      saveAdds(adds);
+      saveDeleted(deleted);
+      rows = mergeRows();
+      render();
+      alert('インポート完了しました');
+    }catch(err){
+      console.error(err);
+      alert('CSVの読み込みに失敗しました');
+    }
+  };
+  reader.readAsText(file);
+}
+
+// ボタンにイベントを登録
+document.getElementById('exportCsvBtn').addEventListener('click', exportCsv);
+document.getElementById('importCsvBtn').addEventListener('click', ()=>{
+  const input = document.getElementById('importCsvInput');
+  input.value = '';
+  input.click();
+});
+document.getElementById('importCsvInput').addEventListener('change', (e)=>{
+  handleImportFiles(e.target.files);
+});
+// PDF出力ボタン
+document.getElementById('exportPdfBtn').addEventListener('click', exportPdf);
+
+/* ===== init ===== */
+render();
+</script>
+</body>
+</html>
