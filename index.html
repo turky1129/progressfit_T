@@ -508,7 +508,7 @@
    ========================= */
 const SHEET_ENDPOINT = 'https://script.google.com/macros/s/AKfycbw9CtTfhzsc7ZMDPvHQXcVDl5dSBwnkBS7eqkiL135vLPowX1lus2IRgsQlX2QY73bXtA/exec';
 const SHEET_TOKEN = 'aP7Z9XQ2K5R8H4mE';
-  
+
 /* =========================
    configs
    ========================= */
@@ -533,7 +533,6 @@ const TARGET_KEY  = 'progressfit_targets_sheet_v1';
    utils
    ========================= */
 const $ = (id)=>document.getElementById(id);
-
 function sleep(ms){ return new Promise(r=>setTimeout(r, ms)); }
 
 function normalizeYMD(v){
@@ -657,7 +656,10 @@ function jsonpGet(url){
     }
 
     script.onerror = ()=>{ cleanup(); reject(new Error('jsonp error')); };
-    script.src = `${url}&callback=${encodeURIComponent(cb)}&_=${Date.now()}`;
+
+    const sep = url.includes('?') ? '&' : '?';
+    script.src = `${url}${sep}callback=${encodeURIComponent(cb)}&_=${Date.now()}`;
+
     document.body.appendChild(script);
   });
 }
@@ -1173,7 +1175,6 @@ $('saveAdd').onclick = async ()=>{
         visceral_fat_level: Number.isNaN(vfl) ? '' : vfl
       });
 
-      // 反映ズレ吸収
       await sleep(450);
       await reloadRowsRetry();
     }, 450);
