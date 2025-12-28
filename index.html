@@ -11,6 +11,9 @@
   <link rel="apple-touch-icon" href="apple-touch-icon.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
   <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png" />
+  <link rel="icon" href="favicon.ico?v=20251228" />
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=20251228" />
+  <link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png?v=20251228" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="ProgressFit" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -663,8 +666,16 @@ function jsonpGet(url){
 }
 
 async function postToGAS(params){
+  // NOTE: GASを「自分のみ」等で公開している場合、POSTはCookie無しだと弾かれることがあるのでcredentialsを付ける
   const body = new URLSearchParams({ token: SHEET_TOKEN, ...params });
-  await fetch(SHEET_ENDPOINT, { method:'POST', mode:'no-cors', body });
+  await fetch(SHEET_ENDPOINT, {
+    method:'POST',
+    mode:'no-cors',
+    credentials:'include',
+    cache:'no-store',
+    redirect:'follow',
+    body
+  });
 }
 
 function toRowsFromSheet(header, rowsArr){
@@ -990,7 +1001,7 @@ async function reloadRowsCore(){
 /* 書き込み直後の読み取りは反映ズレがあるので軽くリトライ */
 async function reloadRowsRetry(){
   let lastErr = null;
-  for(let i=0;i<3;i++){
+  for(let i=0;i<6;i++){
     try{
       await reloadRowsCore();
       return;
@@ -1005,6 +1016,14 @@ async function reloadRowsRetry(){
 async function reloadRows(){
   await withBusy('Loading…', async ()=>{
     await reloadRowsRetry();
+
+      // verify: 反映されてない場合に気づけるように軽くチェック
+      const saved = rows.find(r=>r.date===date);
+      if(!saved || Number(saved.weight_kg) !== Number(weight)){
+        $('subtitle').textContent = '保存したけど反映が見えないかも（GASの公開設定/ログイン/CORSを確認）';
+      }else{
+        $('subtitle').textContent = '保存しました';
+      }
   }, 350);
 }
 
@@ -1176,6 +1195,14 @@ $('saveAdd').onclick = async ()=>{
       // 反映ズレ吸収
       await sleep(450);
       await reloadRowsRetry();
+
+      // verify
+      const still = rows.find(r=>r.date===normalizeYMD(editOriginalDate));
+      if(still){
+        $('subtitle').textContent = '削除したけど反映が見えないかも（GASの公開設定/ログイン/CORSを確認）';
+      }else{
+        $('subtitle').textContent = '削除しました';
+      }
     }, 450);
 
     editMode = false;
