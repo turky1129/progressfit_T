@@ -234,6 +234,10 @@
       padding:16px;
       z-index: 50;
     }
+    /* 認証モーダルは最前面に表示 */
+    #modalAuthBg {
+      z-index: 100;
+    }
     .modal{
       width:min(430px, 100%);
       border:1px solid var(--border);
@@ -334,7 +338,7 @@
     <div class="actions">
       <div class="chip chipBtn" id="countChip">件数 <b id="count">0</b></div>
       <div class="chip chipBtn" id="openTargets">目標</div>
-      <div class="chip chipBtn" id="openAdd">＋データ</div>
+      <div class="chip chipBtn" id="openAdd">＋</div>
     </div>
   </div>
 
@@ -392,7 +396,6 @@
       </div>
 
       <div class="hint">
-        ※データの正はGoogle Sheet。追加/更新/削除は即時Sheetに反映されます。<br/>
         ※CSV取込はSheet全置換（replace）です。
       </div>
     </div>
@@ -405,6 +408,22 @@
   </div>
 
   <div class="safeBottom"></div>
+</div>
+
+<div class="modalBg" id="modalAuthBg">
+  <div class="modal">
+    <div class="mTitle">認証が必要です</div>
+    <div class="form">
+      <div class="field full">
+        <label>パスワード</label>
+        <input id="auth_pw" type="password" placeholder="••••" />
+      </div>
+    </div>
+    <div class="mActions">
+      <button class="btn" id="closeAuth">キャンセル</button>
+      <button class="btn btnPrimary" id="submitAuth">認証</button>
+    </div>
+  </div>
 </div>
 
 <div class="modalBg" id="modalTargetsBg">
@@ -511,6 +530,12 @@
    ========================= */
 const SHEET_ENDPOINT = 'https://script.google.com/macros/s/AKfycbw9CtTfhzsc7ZMDPvHQXcVDl5dSBwnkBS7eqkiL135vLPowX1lus2IRgsQlX2QY73bXtA/exec';
 const SHEET_TOKEN = 'CHANGE_ME_TOKEN'; 
+
+/* =========================
+   Auth settings
+   ========================= */
+const APP_PASSWORD = '2639'; // 既定パスワード
+let isAuthenticated = false; // セッション管理用フラグ
 
 /* =========================
    configs
@@ -788,7 +813,7 @@ const bodyMapBg = {
     drawSection(0, 18.5, 5, 10,   'rgba(124, 255, 140, 0.05)', '低脂肪');
     drawSection(0, 18.5, 10, 20,  'rgba(255, 255, 255, 0.02)', '低体重');
     drawSection(0, 18.5, 20, 45,  'rgba(255, 106, 122, 0.05)', '隠れ肥満');
-    drawSection(18.5, 25, 5, 10,  'rgba(255, 180, 100, 0.05)', '適正体重低脂肪');
+    drawSection(18.5, 25, 5, 10,  'rgba(255, 180, 100, 0.05)', '低脂肪');
     drawSection(18.5, 25, 10, 20, 'rgba(106, 227, 255, 0.12)', '理想的');
     drawSection(18.5, 25, 20, 30, 'rgba(255, 255, 255, 0.03)', '脂肪過多');
     drawSection(18.5, 25, 30, 45, 'rgba(106, 227, 255, 0.08)', '境界型肥満');
@@ -1122,22 +1147,61 @@ function closeModal(bg){ bg.style.display='none'; }
 function closeOnBg(bg){
   bg.addEventListener('click', (e)=>{ if(e.target===bg) closeModal(bg); });
 }
+const authBg    = $('modalAuthBg');
 const targetsBg = $('modalTargetsBg');
 const addBg     = $('modalAddBg');
 const listBg    = $('modalListBg');
+closeOnBg(authBg);
 closeOnBg(targetsBg);
 closeOnBg(addBg);
 closeOnBg(listBg);
 
+/* ===== Authentication ===== */
+let authCallback = null;
+
+function runWithAuth(fn){
+  if(isAuthenticated){
+    fn();
+  } else {
+    authCallback = fn;
+    $('auth_pw').value = '';
+    openModal(authBg);
+    setTimeout(()=>$('auth_pw').focus(), 100);
+  }
+}
+
+$('closeAuth').onclick = () => {
+  closeModal(authBg);
+  authCallback = null;
+};
+
+$('submitAuth').onclick = () => {
+  if($('auth_pw').value === APP_PASSWORD){
+    isAuthenticated = true;
+    closeModal(authBg);
+    if(authCallback) {
+      authCallback();
+      authCallback = null;
+    }
+  } else {
+    alert('パスワードが違います');
+  }
+};
+
+$('auth_pw').onkeydown = (e) => {
+  if(e.key === 'Enter') $('submitAuth').click();
+};
+
 /* ===== Targets ===== */
-$('openTargets').onclick = ()=>{
+$('openTargets').onclick = () => runWithAuth(() => {
   $('t_weight').value = Number.isFinite(targets.weight_kg)?targets.weight_kg.toFixed(1):'';
   $('t_bf').value     = Number.isFinite(targets.bodyfat_pct)?targets.bodyfat_pct.toFixed(1):'';
   $('t_fm').value     = Number.isFinite(targets.fatmass_kg)?targets.fatmass_kg.toFixed(1):'';
   $('t_smm').value    = Number.isFinite(targets.skeletal_muscle_kg)?targets.skeletal_muscle_kg.toFixed(1):'';
   $('t_height').value = targets.height_cm ? String(targets.height_cm) : '';
   openModal(targetsBg);
-};
+});
+
 $('closeTargets').onclick = ()=> closeModal(targetsBg);
 
 $('saveTargets').onclick = ()=>{
@@ -1186,6 +1250,7 @@ function openAdd(){
   resetForm();
   openModal(addBg);
 }
+
 function openEdit(row){
   editMode = true;
   editOriginalDate = row.date;
@@ -1205,7 +1270,7 @@ function openEdit(row){
   openModal(addBg);
 }
 
-$('openAdd').onclick = openAdd;
+$('openAdd').onclick = () => runWithAuth(openAdd);
 $('closeAdd').onclick = ()=> closeModal(addBg);
 
 $('saveAdd').onclick = async ()=>{
@@ -1311,8 +1376,10 @@ function renderList(){
       <div class="listActions"><button class="listEdit">更新</button></div>
     `;
     div.querySelector('.listEdit').onclick = ()=>{
-      closeModal(listBg);
-      openEdit(r);
+      runWithAuth(() => {
+        closeModal(listBg);
+        openEdit(r);
+      });
     };
     wrap.appendChild(div);
   }
@@ -1382,12 +1449,12 @@ async function handleImportFiles(files){
   reader.readAsText(file);
 }
 
-$('exportCsvBtn').addEventListener('click', exportCsv);
-$('importCsvBtn').addEventListener('click', ()=>{
+$('exportCsvBtn').addEventListener('click', () => runWithAuth(exportCsv));
+$('importCsvBtn').addEventListener('click', () => runWithAuth(() => {
   const input = $('importCsvInput');
   input.value = '';
   input.click();
-});
+}));
 $('importCsvInput').addEventListener('change', (e)=>{
   handleImportFiles(e.target.files);
 });
@@ -1523,7 +1590,7 @@ async function exportPdf() {
     alert('PDF生成に失敗しました');
   }
 }
-$('exportPdfBtn').addEventListener('click', exportPdf);
+$('exportPdfBtn').addEventListener('click', () => runWithAuth(exportPdf));
 
 /* =========================
    init
