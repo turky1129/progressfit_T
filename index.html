@@ -757,8 +757,8 @@ const bodyMapBg = {
     const drawSection = (xStart, xEnd, yStart, yEnd, color, label) => {
       const xl = x.getPixelForValue(xStart);
       const xr = x.getPixelForValue(xEnd);
-      const yt = y.getPixelForValue(yEnd);   // 高い数値 = 上(座標小)
-      const yb = y.getPixelForValue(yStart); // 低い数値 = 下(座標大)
+      const yt = y.getPixelForValue(yEnd);
+      const yb = y.getPixelForValue(yStart);
 
       const rx = Math.max(xl, chartArea.left);
       const ry = Math.max(yt, chartArea.top);
@@ -775,7 +775,7 @@ const bodyMapBg = {
           ctx.rect(rx, ry, rw, rh);
           ctx.clip();
           ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
-          ctx.font = 'bold 11px sans-serif';
+          ctx.font = 'bold 10px sans-serif';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
           ctx.fillText(label, rx + rw/2, ry + rh/2);
@@ -785,24 +785,16 @@ const bodyMapBg = {
     };
 
     ctx.save();
-    // イメージ図に基づいた 9区分 (BMI 18.5, 25 / BF 10, 20, 30)
-    
-    // 左列 (BMI < 18.5)
     drawSection(0, 18.5, 5, 10,   'rgba(124, 255, 140, 0.05)', '低脂肪');
     drawSection(0, 18.5, 10, 20,  'rgba(255, 255, 255, 0.02)', '低体重');
     drawSection(0, 18.5, 20, 45,  'rgba(255, 106, 122, 0.05)', '隠れ肥満');
-
-    // 中央列 (BMI 18.5 - 25.0)
     drawSection(18.5, 25, 5, 10,  'rgba(255, 180, 100, 0.05)', '低脂肪');
     drawSection(18.5, 25, 10, 20, 'rgba(106, 227, 255, 0.12)', '理想的');
     drawSection(18.5, 25, 20, 30, 'rgba(255, 255, 255, 0.03)', '脂肪過多');
     drawSection(18.5, 25, 30, 45, 'rgba(106, 227, 255, 0.08)', '境界型肥満');
-
-    // 右列 (BMI > 25.0)
     drawSection(25, 45, 5, 20,    'rgba(167, 139, 250, 0.05)', '過体重');
     drawSection(25, 45, 20, 45,   'rgba(255, 106, 122, 0.10)', '肥満');
 
-    // 境界線
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
     ctx.lineWidth = 1;
     [18.5, 25.0].forEach(v => {
@@ -817,43 +809,6 @@ const bodyMapBg = {
   }
 };
 
-function ensureBodyMap(data){
-  const pts = data.map(r=>{
-    const bmi = r.bmi; const bf = r.body_fat_pct;
-    if(!Number.isFinite(bmi) || !Number.isFinite(bf)) return null;
-    return {x:bmi, y:bf, d:r.date};
-  }).filter(Boolean);
-  const first = pts[0]; const last = pts.at(-1);
-  const ctx = $('bodymap');
-  if(!bodyMapChart){
-    bodyMapChart = new Chart(ctx, {
-      type:'scatter',
-      data:{ datasets:[
-        { label:'推移', data:pts, pointRadius:3, pointHoverRadius:5 },
-        { label:'開始', data:first?[first]:[], pointRadius:7 },
-        { label:'最新', data:last?[last]:[], pointRadius:7 },
-      ]},
-      options:{
-        responsive:true, maintainAspectRatio:false,
-        plugins:{
-          legend:{ labels:{ color:'#e8eefc' } },
-          tooltip:{ callbacks:{ label:(c)=>` BMI ${c.raw.x.toFixed(1)} / BF ${c.raw.y.toFixed(1)}% (${c.raw.d})` } }
-        },
-        scales:{
-          x:{ title:{display:true,text:'BMI',color:'#9fb0d6'}, ticks:{ color:'#9fb0d6' }, grid:{ color:'rgba(255,255,255,.06)' } },
-          y:{ title:{display:true,text:'体脂肪率(%)',color:'#9fb0d6'}, ticks:{ color:'#9fb0d6' }, grid:{ color:'rgba(255,255,255,.06)' } },
-        }
-      },
-      plugins:[bodyMapBg]
-    });
-  }else{
-    bodyMapChart.data.datasets[0].data = pts;
-    bodyMapChart.data.datasets[1].data = first?[first]:[];
-    bodyMapChart.data.datasets[2].data = last?[last]:[];
-    bodyMapChart.update();
-  }
-}
-  
 /* =========================
    charts
    ========================= */
@@ -908,8 +863,10 @@ function ensureBodyMap(data){
     })
     .filter(Boolean);
 
+  if(!pts.length) return;
   const first = pts[0];
   const last = pts.at(-1);
+  const history = pts.slice(0, -1);
   const ctx = $('bodymap');
 
   if(!bodyMapChart){
@@ -917,47 +874,79 @@ function ensureBodyMap(data){
       type:'scatter',
       data:{ datasets:[
         { 
-          label:'軌跡', 
-          data:pts, 
+          label:'推移', 
+          data:history, 
           pointRadius:2.5, 
-          showLine: true,
-          borderColor: 'rgba(159, 176, 214, 0.4)',
-          borderWidth: 1.5,
-          tension: 0.2,
-          backgroundColor: 'rgba(159, 176, 214, 0.6)'
+          backgroundColor: 'rgba(106, 227, 255, 0.3)',
+          borderColor: 'transparent'
         },
-        { label:'開始', data:first?[first]:[], pointRadius:6, backgroundColor: '#a78bfa', borderColor: '#fff', borderWidth: 1 },
-        { label:'最新', data:last?[last]:[], pointRadius:10, backgroundColor: '#ff6a7a', borderColor: '#fff', borderWidth: 2, pointStyle: 'star' },
+        { 
+          label:'開始', 
+          data:[first], 
+          pointRadius:4, 
+          backgroundColor: 'rgba(167, 139, 250, 0.8)', 
+          borderColor: 'rgba(167, 139, 250, 1)', 
+          borderWidth: 1.5 
+        },
+        { 
+          label:'最新', 
+          data:[last], 
+          pointRadius:3, 
+          backgroundColor: '#ffb464', 
+          borderColor: '#ffb464', 
+          borderWidth: 2,
+          pointStyle: 'circle'
+        },
       ]},
       options:{
         responsive:true,
         maintainAspectRatio:false,
-        clip: false, // 枠外でも描画（見切れ防止）
+        clip: false,
         plugins:{
-          legend:{ display: true, position: 'top', labels:{ color:'#9fb0d6', usePointStyle: true, boxWidth: 8 } },
+          legend:{ 
+            display: true, 
+            position: 'top', 
+            labels:{ color:'#9fb0d6', usePointStyle: true, boxWidth: 8, padding: 15, font:{ weight:'bold', size:11 } } 
+          },
           tooltip:{ callbacks:{ label:(c)=>`${c.raw.d}: BMI ${c.raw.x.toFixed(1)} / 体脂肪 ${c.raw.y.toFixed(1)}%` } }
         },
         scales:{
           x:{ 
-            min: 15, max: 35, // 軸を固定して全体像を維持
+            min:15, max:35,
             title:{display:true, text:'BMI', color:'#9fb0d6', font:{weight:'bold'}}, 
             ticks:{ color:'#9fb0d6' }, 
-            grid:{ display: false } 
+            grid:{ color: 'rgba(255,255,255,0.05)' } 
           },
           y:{ 
-            min: 5, max: 45, // 軸を固定
+            min:5, max:40,
             title:{display:true, text:'体脂肪率 (%)', color:'#9fb0d6', font:{weight:'bold'}}, 
             ticks:{ color:'#9fb0d6' }, 
-            grid:{ display: false } 
+            grid:{ color: 'rgba(255,255,255,0.05)' } 
           },
         }
       },
-      plugins:[bodyMapBg]
+      plugins:[bodyMapBg, {
+        id: 'latestHighlight',
+        afterDatasetsDraw(chart) {
+          const {ctx} = chart;
+          const meta = chart.getDatasetMeta(2);
+          if (!meta.data[0]) return;
+          
+          const pt = meta.data[0];
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, 8, 0, Math.PI * 2);
+          ctx.strokeStyle = 'rgba(255, 180, 100, 0.4)';
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+          ctx.restore();
+        }
+      }]
     });
   }else{
-    bodyMapChart.data.datasets[0].data = pts;
-    bodyMapChart.data.datasets[1].data = first?[first]:[];
-    bodyMapChart.data.datasets[2].data = last?[last]:[];
+    bodyMapChart.data.datasets[0].data = history;
+    bodyMapChart.data.datasets[1].data = [first];
+    bodyMapChart.data.datasets[2].data = [last];
     bodyMapChart.update();
   }
 }
