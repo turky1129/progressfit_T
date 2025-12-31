@@ -6,7 +6,6 @@
   <meta name="theme-color" content="#0b1220" />
   <title>ProgressFit</title>
 
-  <!-- PWA / icons -->
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="apple-touch-icon.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
@@ -405,7 +404,6 @@
   <div class="safeBottom"></div>
 </div>
 
-<!-- Targets Modal -->
 <div class="modalBg" id="modalTargetsBg">
   <div class="modal">
     <div class="mTitle">目標値（端末に保存）</div>
@@ -438,7 +436,6 @@
   </div>
 </div>
 
-<!-- Add/Edit Modal -->
 <div class="modalBg" id="modalAddBg">
   <div class="modal">
     <div class="mTitle" id="addTitle">データ追加</div>
@@ -476,6 +473,10 @@
       </div>
 
       <div class="field">
+        <label>フィットネススコア</label>
+        <input id="a_fs" inputmode="decimal" placeholder="任意" />
+      </div>
+      <div class="field">
         <label>BMI（空なら身長から計算）</label>
         <input id="a_bmi" inputmode="decimal" placeholder="任意" />
       </div>
@@ -491,7 +492,6 @@
   </div>
 </div>
 
-<!-- List Modal -->
 <div class="modalBg" id="modalListBg">
   <div class="modal">
     <div class="mTitle">記録一覧</div>
@@ -521,6 +521,7 @@ const METRICS = {
   muscle_kg:           { name:'筋肉量', unit:'kg'  },
   bmi:                 { name:'BMI', unit:''       },
   visceral_fat_level:  { name:'内臓脂肪', unit:'lv' },
+  fitness_score:       { name:'フィットネススコア', unit:'' },
 };
 const MAIN_METRICS = ['weight_kg','bodyfat_pct','fatmass_kg','skeletal_muscle_kg'];
 
@@ -1095,6 +1096,7 @@ function resetForm(){
   $('a_smm').value = '';
   $('a_mu').value = '';
   $('a_vfl').value = '';
+  $('a_fs').value = '';
   $('a_bmi').value = '';
 }
 
@@ -1119,6 +1121,7 @@ function openEdit(row){
   $('a_smm').value    = row.skeletal_muscle_kg ?? '';
   $('a_mu').value     = row.muscle_kg ?? '';
   $('a_vfl').value    = row.visceral_fat_level ?? '';
+  $('a_fs').value     = row.fitness_score ?? '';
   $('a_bmi').value    = row.bmi ?? '';
 
   openModal(addBg);
@@ -1136,6 +1139,7 @@ $('saveAdd').onclick = async ()=>{
 
   const mu  = parseFloat($('a_mu').value);
   const vfl = parseFloat($('a_vfl').value);
+  const fs  = parseFloat($('a_fs').value);
   let bmi = parseFloat($('a_bmi').value);
 
   if(!date){ alert('測定日を選んでね'); return; }
@@ -1166,7 +1170,7 @@ $('saveAdd').onclick = async ()=>{
         weight_kg: weight,
         bodyfat_pct: bf,
         bmi: bmi,
-        fitness_score: '',
+        fitness_score: Number.isNaN(fs) ? '' : fs,
         fatmass_kg: fm,
         muscle_kg: Number.isNaN(mu) ? '' : mu,
         skeletal_muscle_kg: smm,
