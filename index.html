@@ -818,46 +818,42 @@ const bodyMapBg = {
 };
 
 function ensureBodyMap(data){
-  const pts = data
-    .map(r=>{
-      const bmi = getMetricValue(r,'bmi');
-      const bf  = getMetricValue(r,'bodyfat_pct');
-      return (Number.isFinite(bmi) && Number.isFinite(bf)) ? {x:bmi, y:bf, d:r.date} : null;
-    })
-    .filter(Boolean);
-
-  if(!pts.length) return;
-  const last = pts.at(-1);
+  const pts = data.map(r=>{
+    const bmi = r.bmi; const bf = r.body_fat_pct;
+    if(!Number.isFinite(bmi) || !Number.isFinite(bf)) return null;
+    return {x:bmi, y:bf, d:r.date};
+  }).filter(Boolean);
+  const first = pts[0]; const last = pts.at(-1);
   const ctx = $('bodymap');
-
   if(!bodyMapChart){
     bodyMapChart = new Chart(ctx, {
       type:'scatter',
       data:{ datasets:[
-        { label:'軌跡', data:pts, showLine: true, borderColor: 'rgba(159, 176, 214, 0.4)', borderWidth: 1.5, pointRadius:2, backgroundColor: 'rgba(159, 176, 214, 0.6)' },
-        { label:'最新', data:[last], pointRadius:8, backgroundColor: '#6ae3ff', borderColor: '#fff', borderWidth: 2 },
+        { label:'推移', data:pts, pointRadius:3, pointHoverRadius:5 },
+        { label:'開始', data:first?[first]:[], pointRadius:7 },
+        { label:'最新', data:last?[last]:[], pointRadius:7 },
       ]},
       options:{
-        responsive:true,
-        maintainAspectRatio:false,
-        layout:{ padding: 0 }, // 余白を詰めて横幅を最大化
-        scales:{
-          x:{ min:15, max:35, title:{display:true, text:'BMI', color:'#9fb0d6', font:{size:10}}, ticks:{color:'#9fb0d6', font:{size:10}}, grid:{display:false} },
-          y:{ min:5, max:45, title:{display:true, text:'体脂肪率 (%)', color:'#9fb0d6', font:{size:10}}, ticks:{color:'#9fb0d6', font:{size:10}}, grid:{display:false} }
-        },
+        responsive:true, maintainAspectRatio:false,
         plugins:{
-          legend:{ display: false } // 凡例を消してお手本のスッキリした見た目に
+          legend:{ labels:{ color:'#e8eefc' } },
+          tooltip:{ callbacks:{ label:(c)=>` BMI ${c.raw.x.toFixed(1)} / BF ${c.raw.y.toFixed(1)}% (${c.raw.d})` } }
+        },
+        scales:{
+          x:{ title:{display:true,text:'BMI',color:'#9fb0d6'}, ticks:{ color:'#9fb0d6' }, grid:{ color:'rgba(255,255,255,.06)' } },
+          y:{ title:{display:true,text:'体脂肪率(%)',color:'#9fb0d6'}, ticks:{ color:'#9fb0d6' }, grid:{ color:'rgba(255,255,255,.06)' } },
         }
       },
       plugins:[bodyMapBg]
     });
-  } else {
+  }else{
     bodyMapChart.data.datasets[0].data = pts;
-    bodyMapChart.data.datasets[1].data = [last];
+    bodyMapChart.data.datasets[1].data = first?[first]:[];
+    bodyMapChart.data.datasets[2].data = last?[last]:[];
     bodyMapChart.update();
   }
 }
-
+  
 /* =========================
    charts
    ========================= */
