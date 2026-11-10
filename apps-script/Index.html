@@ -337,6 +337,7 @@
 </head>
 
 <body>
+<div class="modalBg" id="modalAuthBg" style="display:flex;background:#0b1220" role="dialog" aria-modal="true" aria-labelledby="authTitle"><form class="modal" id="loginForm"><h1 class="mTitle" id="authTitle">ProgressFitを開く</h1><div class="field full"><label for="loginPassword">パスワード</label><input id="loginPassword" type="password" autocomplete="current-password" required maxlength="256"></div><p><label><input id="rememberLogin" type="checkbox" checked> この端末で160日間ログインを保持</label></p><p id="loginError" role="alert"></p><button class="btn btnPrimary" id="loginSubmit" type="submit">開く</button></form></div>
 <div class="phone">
   <div class="top">
     <div class="brand">
@@ -349,7 +350,7 @@
     <div class="actions">
       <div class="chip chipBtn" id="countChip">件数 <b id="count">0</b></div>
       <div class="chip chipBtn" id="openTargets">目標</div>
-      <div class="chip chipBtn" id="openAdd">＋</div>
+      <div class="chip chipBtn" id="openAdd">＋</div><button class="chip chipBtn" id="logoutBtn" type="button">ロック</button>
     </div>
   </div>
 
@@ -656,15 +657,25 @@ function getMetricValue(row, key){
 /* =========================
    GAS I/O
    ========================= */
+let sessionToken='';
+try { sessionToken=localStorage.getItem('pf_session') || ''; } catch(_) {}
+function forgetSession(){ sessionToken=''; try{localStorage.removeItem('pf_session');}catch(_){} }
+function showLogin(message='') {
+  $('modalAuthBg').style.display='flex'; $('loginError').textContent=message;
+}
 function gasCall(method, argument){
   return new Promise((resolve,reject)=>{
-    if(!window.google?.script?.run){ reject(new Error('Googleログイン版のURLから開いてください。')); return; }
-    const runner = google.script.run.withSuccessHandler(resolve).withFailureHandler(reject);
-    // Explicit allowlist: never execute a function name received from input.
-    if(method === 'read') runner.getRecords();
-    else if(method === 'upsert') runner.saveRecord(argument);
-    else if(method === 'delete') runner.deleteRecord(argument.date);
-    else if(method === 'import') runner.importRecords(argument.csv);
+    if(!window.google?.script?.run){ reject(new Error('アプリのURLから開いてください。')); return; }
+    const runner=google.script.run.withSuccessHandler(resolve).withFailureHandler(error=>{
+      if(String(error?.message).includes('AUTH_REQUIRED')) {forgetSession();showLogin('もう一度パスワードを入力してください。');}
+      reject(error);
+    });
+    if(method==='login') runner.login(argument.password,argument.remember);
+    else if(method==='logout') runner.logout(sessionToken);
+    else if(method==='read') runner.getRecords(sessionToken);
+    else if(method==='upsert') runner.saveRecord(sessionToken,argument);
+    else if(method==='delete') runner.deleteRecord(sessionToken,argument.date);
+    else if(method==='import') runner.importRecords(sessionToken,argument.csv);
     else reject(new Error('未対応の操作です。'));
   });
 }
@@ -1073,6 +1084,7 @@ async function reloadRowsRetry(){
       await reloadRowsCore();
       return;
     }catch(e){
+      if(String(e?.message).includes('AUTH_REQUIRED')) throw e;
       lastErr = e;
       await sleep(300 + i*250);
     }
@@ -1132,8 +1144,9 @@ closeOnBg(targetsBg);
 closeOnBg(addBg);
 closeOnBg(listBg);
 
-// Google authenticates access; every server method verifies the owner again.
+// The server verifies the session for every data operation.
 function runWithAuth(fn){
+  if(!sessionToken){showLogin();return;}
   if(busyCount > 0) return;
   fn();
 }
@@ -1562,7 +1575,22 @@ $('exportPdfBtn').addEventListener('click', () => runWithAuth(exportPdf));
 /* =========================
    init
    ========================= */
-reloadRows().catch(()=>{ $('subtitle').textContent = '読み込み失敗。ロゴを押すと再試行します'; });
+$('loginForm').onsubmit=async event=>{
+  event.preventDefault(); $('loginSubmit').disabled=true; $('loginError').textContent='';
+  try {
+    const result=await gasCall('login',{password:$('loginPassword').value,remember:$('rememberLogin').checked});
+    sessionToken=result.token; $('loginPassword').value='';
+    try {if($('rememberLogin').checked) localStorage.setItem('pf_session',sessionToken);else localStorage.removeItem('pf_session');}catch(_){}
+    await reloadRows(); closeModal($('modalAuthBg'));
+  } catch(error){showLogin(error?.message || '接続できませんでした。');}
+  finally {$('loginSubmit').disabled=false;}
+};
+$('logoutBtn').onclick=async()=>{
+  try {await gasCall('logout');forgetSession();location.reload();}
+  catch(error){alert('ロックを完了できませんでした。再試行してください。');}
+};
+if(sessionToken) reloadRows().then(()=>closeModal($('modalAuthBg'))).catch(error=>showLogin(error?.message || '読み込みに失敗しました。'));
+else showLogin();
 </script>
 </body>
 </html>
