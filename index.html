@@ -13,6 +13,13 @@
 main{max-width:430px;margin:40px auto}img{border-radius:16px}h1{font-size:26px}p{color:#9fb0d6}a{display:block;background:#6ae3ff;color:#0b1220;border-radius:14px;padding:14px;text-align:center;font-weight:700;text-decoration:none}small{display:block;margin-top:24px;color:#9fb0d6}
 </style></head><body><main><img src="icon-192.png" width="64" height="64" alt=""><h1>ProgressFit</h1>
 <p>ホーム画面への追加は、このページでSafariの共有メニューから「ホーム画面に追加」を選んでください。</p>
-<a href="https://script.google.com/macros/s/AKfycbw9CtTfhzsc7ZMDPvHQXcVDl5dSBwnkBS7eqkiL135vLPowX1lus2IRgsQlX2QY73bXtA/exec" target="_top" rel="noreferrer">ProgressFitを開く</a>
+<a id="openApp" href="https://script.google.com/macros/s/AKfycbw9CtTfhzsc7ZMDPvHQXcVDl5dSBwnkBS7eqkiL135vLPowX1lus2IRgsQlX2QY73bXtA/exec" target="_top" rel="noreferrer">ProgressFitを開く</a>
 <small>ボタンを押すとGoogle Apps Scriptの記録画面を開きます。記録画面ではパスワードを入力してください。ホーム画面に登録済みのGoogleアイコンは削除し、このページを追加し直してください。</small>
+<script>
+// Keep this page available for installation; installed launches open records directly.
+if (navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches) {
+  document.querySelector('main').hidden = true;
+  window.location.replace(document.getElementById('openApp').href);
+}
+</script>
 </main></body></html>
