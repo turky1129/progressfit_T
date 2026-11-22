@@ -24,7 +24,7 @@ function setup() {
     SpreadsheetApp:{getActiveSpreadsheet:()=>({getSheetByName:()=>sheet}), flush:()=>{}},
     LockService:{getScriptLock:()=>({waitLock:()=>{},releaseLock:()=>{}})},
     Utilities:{parseCsv:s=>s.split('\n').map(x=>x.split(',')),formatDate:()=> '20261029_200000',getUuid:()=>crypto.randomUUID(),DigestAlgorithm:{SHA_256:'sha256'},Charset:{UTF_8:'utf8'},computeDigest:(_,s)=>crypto.createHash('sha256').update(s).digest(),base64EncodeWebSafe:b=>Buffer.from(b).toString('base64url')},
-    ContentService:{createTextOutput:s=>s}
+    ContentService:{MimeType:{JSON:'application/json'},createTextOutput:s=>({setMimeType:()=>s})}
   });
   vm.runInContext(source,context);
   const token=context.login(properties.PF_PASSWORD,true).token;
@@ -88,8 +88,23 @@ test('invalid imports preserve data; valid import makes a backup before replacem
   const s=setup(); s.context.importRecords(s.token,header.join(',')+'\n2026-10-02,74,20,24,,15,50,30,8');
   assert.equal(s.backups(),1); assert.equal(s.writes(),1); assert.equal(s.values()[1][0],'2026-10-02');
 });
-test('retired POST cannot read or mutate data',()=>{
-  const s=setup(''); assert.match(s.context.doPost({parameter:{action:'delete'}}),/retired/); assert.equal(s.writes(),0);
+test('POST rejects legacy, malformed and unauthenticated requests without writes',()=>{
+  const s=setup();
+  const bodies=['invalid', '{}', JSON.stringify({action:'delete',token:s.token}), ...['read','upsert','delete','import','logout'].map(action=>JSON.stringify({version:1,action,token:'forged',argument:record}))];
+  for(const contents of bodies) assert.equal(JSON.parse(s.context.doPost({postData:{contents}})).ok,false);
+  assert.equal(JSON.parse(s.context.doPost({parameter:{action:'delete'}})).ok,false);
+  assert.equal(s.writes(),0);assert.equal(s.backups(),0);
+});
+test('POST password login issues a 160-day session and authorizes read and logout',()=>{
+  const s=setup();
+  const post=request=>JSON.parse(s.context.doPost({postData:{contents:JSON.stringify({version:1,...request})}}));
+  const login=post({action:'login',argument:{password:'0123',remember:true}});
+  assert.equal(login.ok,true);assert.equal(login.token.length,72);
+  assert.ok(login.expires>Date.now()+159*24*60*60*1000);
+  assert.equal(post({action:'read',token:login.token}).ok,true);
+  assert.equal(post({action:'logout',token:login.token}).ok,true);
+  assert.match(post({action:'read',token:login.token}).error,/AUTH_REQUIRED/);
+  assert.equal(s.writes(),0);
 });
 test('published sources do not embed legacy credentials or JSONP',()=>{
   const html = fs.readFileSync(require('node:path').join(__dirname,'../apps-script/Index.html'),'utf8');
