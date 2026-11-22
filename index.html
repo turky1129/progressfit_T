@@ -342,7 +342,7 @@
 </head>
 
 <body>
-<div class="modalBg" id="modalAuthBg" style="display:flex;background:#0b1220" role="dialog" aria-modal="true" aria-labelledby="authTitle"><form class="modal" id="loginForm"><h1 class="mTitle" id="authTitle">ProgressFitを開く</h1><div class="field full"><label for="loginPassword">パスワード</label><input id="loginPassword" type="password" autocomplete="current-password" required maxlength="256"></div><p><label><input id="rememberLogin" type="checkbox" checked> この端末で160日間ログインを保持</label></p><p id="loginError" role="alert"></p><button class="btn btnPrimary" id="loginSubmit" type="submit">開く</button></form></div>
+<div class="modalBg" id="modalAuthBg" style="display:flex;background:#0b1220" role="dialog" aria-modal="true" aria-label="ProgressFit"><div id="sessionLoading" style="text-align:center"><p id="sessionStatus" role="status">読み込み中…</p><button class="btn" id="retrySession" type="button" hidden>再試行</button></div><form class="modal" id="loginForm" style="display:none"><h1 class="mTitle" id="authTitle">ProgressFitを開く</h1><div class="field full"><label for="loginPassword">パスワード</label><input id="loginPassword" type="password" autocomplete="current-password" required maxlength="256"></div><p><label><input id="rememberLogin" type="checkbox" checked> この端末で160日間ログインを保持</label></p><p id="loginError" role="alert"></p><button class="btn btnPrimary" id="loginSubmit" type="submit">開く</button></form></div>
 <div class="phone">
   <div class="top">
     <div class="brand">
@@ -666,6 +666,7 @@ let sessionToken='';
 try { sessionToken=localStorage.getItem('pf_session') || ''; } catch(_) {}
 function forgetSession(){ sessionToken=''; try{localStorage.removeItem('pf_session');}catch(_){} }
 function showLogin(message='') {
+  $('sessionLoading').style.display='none'; $('loginForm').style.display='block';
   $('modalAuthBg').style.display='flex'; $('loginError').textContent=message;
 }
 const API_URL='https://script.google.com/macros/s/AKfycbw9CtTfhzsc7ZMDPvHQXcVDl5dSBwnkBS7eqkiL135vLPowX1lus2IRgsQlX2QY73bXtA/exec';
@@ -1604,8 +1605,18 @@ $('logoutBtn').onclick=async()=>{
   try {await gasCall('logout');forgetSession();location.reload();}
   catch(error){alert('ロックを完了できませんでした。再試行してください。');}
 };
-if(sessionToken) reloadRows().then(()=>closeModal($('modalAuthBg'))).catch(error=>showLogin(error?.message || '読み込みに失敗しました。'));
-else showLogin();
+async function restoreSession(){
+  if(!sessionToken){showLogin();return;}
+  $('sessionStatus').textContent='読み込み中…'; $('retrySession').hidden=true;
+  try {await reloadRows();closeModal($('modalAuthBg'));}
+  catch(error){
+    if(!sessionToken){showLogin(error?.message || 'パスワードを入力してください。');return;}
+    $('sessionStatus').textContent='記録を読み込めませんでした。接続を確認して再試行してください。';
+    $('retrySession').hidden=false;
+  }
+}
+$('retrySession').onclick=restoreSession;
+restoreSession();
 </script>
 </body>
 </html>
