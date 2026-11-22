@@ -20,7 +20,7 @@ test('Pages restores session on startup and sends token in POST body only',async
 });
 test('network errors keep remembered session; explicit expiry removes it',async()=>{
   let removed=false;
-  const nodes={modalAuthBg:{style:{}},loginError:{}};
+  const nodes={modalAuthBg:{style:{}},loginError:{},sessionLoading:{style:{}},loginForm:{style:{}}};
   const context=vm.createContext({$:id=>nodes[id],localStorage:{getItem:()=> 'saved-session',removeItem:()=>removed=true},AbortController,setTimeout,clearTimeout,fetch:async()=>{throw Error('offline');}});
   vm.runInContext(transport,context);
   await assert.rejects(context.gasCall('read'),/offline/);assert.equal(removed,false);
