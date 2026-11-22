@@ -1,3 +1,4 @@
+/** @OnlyCurrentDoc */
 // Execute as the owner; access ANYONE_ANONYMOUS only after PF_PASSWORD is configured.
 const SHEET_NAME = 'data';
 const HEADER = ['date','weight_kg','bodyfat_pct','bmi','fitness_score','fatmass_kg','muscle_kg','skeletal_muscle_kg','visceral_fat_level'];
@@ -64,9 +65,28 @@ function doGet() {
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover');
 }
 
-// The former token/JSONP API is intentionally disabled, including all POSTs.
-function doPost() {
-  return ContentService.createTextOutput('This API has been retired. Open the private web app.');
+// Passwords and session tokens travel in HTTPS request bodies, never URLs.
+function doPost(e) {
+  let response;
+  try {
+    const body = e && e.postData && e.postData.contents;
+    if (typeof body !== 'string' || body.length > 2000000) throw new Error('リクエストが不正です。');
+    const request = JSON.parse(body);
+    if (!request || request.version !== 1 || typeof request.action !== 'string') throw new Error('リクエストが不正です。');
+    const arg = request.argument || {};
+    switch (request.action) {
+      case 'login': response = login(arg.password, arg.remember === true); break;
+      case 'logout': response = logout(request.token); break;
+      case 'read': response = getRecords(request.token); break;
+      case 'upsert': response = saveRecord(request.token, arg); break;
+      case 'delete': response = deleteRecord(request.token, arg.date); break;
+      case 'import': response = importRecords(request.token, arg.csv); break;
+      default: throw new Error('未対応の操作です。');
+    }
+  } catch (error) {
+    response = {ok:false, error:String(error.message || '処理に失敗しました。')};
+  }
+  return ContentService.createTextOutput(JSON.stringify(response)).setMimeType(ContentService.MimeType.JSON);
 }
 
 function sheet_() {
